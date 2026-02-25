@@ -52,12 +52,6 @@ function CL(c){var s="";while(c>0){c--;s=String.fromCharCode(65+(c%26))+s;c=Math
 - range.NumberFormat = "yyyy-mm-dd";     // 日期格式
 - range.NumberFormat = "0.00%";          // 百分比格式
 
-### 边框
-
-- range.Borders.LineStyle = 1;           // 1=实线 全边框
-- range.Borders.Color = 0xD0D0D0;       // 边框颜色
-- range.Borders(7).LineStyle = 1;        // 7=左 8=顶 9=底 10=右 11=内竖 12=内横
-
 ### 尺寸与合并
 
 - ws.Range("A:A").ColumnWidth = 15;
@@ -97,15 +91,17 @@ function CL(c){var s="";while(c>0){c--;s=String.fromCharCode(65+(c%26))+s;c=Math
 
 ## BGR 常用颜色速查
 
-| 用途 | BGR 值 |
-|------|--------|
-| 深蓝表头 | 0x8B4513 |
-| 鲜明蓝 | 0xFF4500 |
-| 橙色强调 | 0x0055D9 |
-| 金橙色 | 0xE8A040 |
-| 浅灰背景 | 0xF0F0F0 |
-| 浅蓝交替行 | 0xFFF0E0 |
-| 白色 | 0xFFFFFF |
-| 黑色 | 0x000000 |
-| 红色 | 0x0000FF |
-| 绿色 | 0x00AA00 |
+| 用途 | BGR 值 | RGB 等价 |
+|------|--------|---------|
+| 深蓝表头/品牌色 | 0x8B4513 | #13458B |
+| 鲜明蓝(图表主色) | 0xFF4500 | #0045FF |
+| 橙色强调 | 0x0055D9 | #D95500 |
+| 金橙色(图表柱状) | 0xE8A040 | #40A0E8 |
+| 浅灰背景 | 0xF0F0F0 | #F0F0F0 |
+| 浅蓝交替行 | 0xFFF0E0 | #E0F0FF |
+| 白色 | 0xFFFFFF | #FFFFFF |
+| 黑色 | 0x000000 | #000000 |
+| 红色 | 0x0000FF | #FF0000 |
+| 绿色(完成/涨) | 0x00AA00 | #00AA00 |
+| 橙黄(进行中/警告) | 0x00AAFF | #FFAA00 |
+| 蓝色(信息) | 0xFF8800 | #0088FF |

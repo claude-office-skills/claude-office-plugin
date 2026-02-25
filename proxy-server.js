@@ -17,15 +17,24 @@ import {
   mkdirSync,
   readdirSync,
   existsSync,
+  unlinkSync,
 } from "fs";
 import { tmpdir } from "os";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function isPathSafe(filePath, allowedDir) {
+  const resolved = resolve(filePath);
+  const allowed = resolve(allowedDir);
+  return resolved.startsWith(allowed + "/") || resolved === allowed;
+}
+
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]+$/;
 
 // ── Skill Loader ──────────────────────────────────────────────
 function loadSkills() {
@@ -99,7 +108,7 @@ function parseFrontmatter(raw) {
   return { frontmatter: fm, body: match[2].trim() };
 }
 
-function matchSkills(allSkills, userMessage) {
+function matchSkills(allSkills, userMessage, wpsContext) {
   const matched = [];
   for (const [id, skill] of allSkills) {
     const ctx = skill.context || {};
@@ -107,21 +116,171 @@ function matchSkills(allSkills, userMessage) {
       matched.push(skill);
       continue;
     }
+    let keywordHit = false;
     if (Array.isArray(ctx.keywords)) {
       const msg = userMessage.toLowerCase();
       if (ctx.keywords.some((kw) => msg.includes(kw.toLowerCase()))) {
-        matched.push(skill);
+        keywordHit = true;
       }
+    }
+    let contextHit = false;
+    if (wpsContext && wpsContext.selection) {
+      const sel = wpsContext.selection;
+      if (
+        (ctx.hasEmptyCells === true || ctx.hasEmptyCells === "true") &&
+        sel.emptyCellCount > 0
+      )
+        contextHit = true;
+      if (
+        (ctx.hasFormulas === true || ctx.hasFormulas === "true") &&
+        sel.hasFormulas
+      )
+        contextHit = true;
+      if (ctx.minRows && sel.rowCount >= Number(ctx.minRows)) contextHit = true;
+    }
+    if (keywordHit || contextHit) {
+      matched.push(skill);
     }
   }
   return matched;
 }
 
-function buildSystemPrompt(skills, todayStr) {
+const CHART_STYLE_OVERRIDE = `
+## 图表创建（关键！请严格遵守）
+
+### 1. API 兼容性（必须遵守，否则图表创建失败）
+
+**Style 参数**：必须用 \`0\`。❌ 禁止 \`-1\`（返回 null）。
+
+**可用 XlChartType**：4(折线) / 51(柱状) / 5(饼图) / 57(条形) / 1(面积)
+❌ 绝对禁止 65(xlLineMarkers)——返回 null！
+
+\`\`\`javascript
+var shape = ws.Shapes.AddChart2(0, 4, left, top, width, height);
+if (!shape) throw new Error("AddChart2 returned null");
+\`\`\`
+
+❌ WPS 不支持逗号分隔多区域 Range（如 \`"A1:D1,A3:D4"\`），SetSourceData 会静默失败。
+
+### 2. 准备工作（每次生成图表前必须执行）
+
+\`\`\`javascript
+// (a) 删除当前 sheet 上所有已有的图表 shape，避免残留
+var _sc = ws.Shapes.Count;
+for (var _di = _sc; _di >= 1; _di--) {
+  try { if (ws.Shapes.Item(_di).Chart) ws.Shapes.Item(_di).Delete(); } catch(e){}
+}
+\`\`\`
+
+### 3. 辅助数据区域（写在远处列，不要写在主数据下方）
+
+为图表准备的辅助数据，写到 **AA 列之后**（距主数据区很远），不污染用户可见区域：
+
+\`\`\`javascript
+var AUX_COL = "AA"; // 辅助数据从 AA 列开始
+var auxRow = 1;
+// 第1行：X轴标签（年份）
+// 第2行起：每个系列一行，A列=系列名称，后续列=数值
+ws.Range(AUX_COL + "1").Value2 = "年份";
+ws.Range("AB1").Value2 = "2022A";
+ws.Range("AC1").Value2 = "2023A";
+// ...
+ws.Range(AUX_COL + "2").Value2 = "营业收入";
+ws.Range("AB2").Value2 = 1200;
+// ...
+\`\`\`
+
+### 4. 图表定位
+
+图表放在**主数据区域的右侧**（而非下方），和辅助数据同侧，不遮挡也不需要滚动：
+
+\`\`\`javascript
+// 图表放在 H 列右侧（约 500px 偏移），紧贴数据区顶部
+var chartLeft = 520;  // 主数据区右侧
+var chartTop1 = 20;   // 第一张图贴顶
+var chartTop2 = chartTop1 + 380; // 第二张图在第一张下方
+\`\`\`
+
+如果用户数据列很多超出 H 列，则根据 UsedRange 动态计算：
+\`\`\`javascript
+var dataEndCol = ws.UsedRange.Column + ws.UsedRange.Columns.Count;
+var chartLeft = Math.max(dataEndCol * 72, 500); // 72px ≈ 1列宽度
+\`\`\`
+
+### 5. 量级差异处理（非常重要）
+
+当多个系列的数值量级差异超过 5 倍时（如营业收入 5000 vs EBIT 200），**绝对不要放在同一张图**。
+分成独立图表，各自有合适的Y轴刻度：
+
+- 图表1：收入类指标（营业收入、毛利润）—— 量级相近，可共图
+- 图表2：利润类指标（EBIT、净利润）—— 量级相近，可共图
+- 图表3：现金流指标（FCF）—— 单独
+- 图表4：比率指标（毛利率、净利率）—— 百分比，单独
+
+### 6. 颜色和样式
+
+\`\`\`javascript
+function setSeriesColor(chart, idx, bgr, w) {
+  try {
+    var s = chart.SeriesCollection(idx);
+    try { s.Border.Color = bgr; s.Border.Weight = w || 2.5; } catch(e) {}
+    try { s.Format.Line.ForeColor.RGB = bgr; s.Format.Line.Weight = w || 2.5; } catch(e) {}
+  } catch(e) {}
+}
+\`\`\`
+
+颜色方案（BGR）：0xFF901E(蓝) / 0x3232FF(红) / 0x32CD32(绿) / 0x00CCFF(橙) / 0xCC33CC(紫)
+
+### 7. 完整创建模式
+
+\`\`\`javascript
+// 清理旧图表
+var _sc = ws.Shapes.Count;
+for (var _di = _sc; _di >= 1; _di--) {
+  try { if (ws.Shapes.Item(_di).Chart) ws.Shapes.Item(_di).Delete(); } catch(e){}
+}
+
+// 辅助数据写入 AA 列
+ws.Range("AA1").Value2 = "年份";
+ws.Range("AB1").Value2 = "2024A"; ws.Range("AC1").Value2 = "2025E"; // ...
+ws.Range("AA2").Value2 = "营业收入";
+ws.Range("AB2").Value2 = 3000; ws.Range("AC2").Value2 = 4200; // ...
+ws.Range("AA3").Value2 = "毛利润";
+ws.Range("AB3").Value2 = 1500; ws.Range("AC3").Value2 = 2100; // ...
+
+// 创建图表（右侧定位）
+var shape = ws.Shapes.AddChart2(0, 4, 520, 20, 640, 360);
+if (!shape) throw new Error("AddChart2 returned null");
+var chart = shape.Chart;
+chart.SetSourceData(ws.Range("AA1:AF3"));
+chart.HasTitle = true;
+chart.ChartTitle.Text = "营业收入与毛利润趋势（百万元）";
+setSeriesColor(chart, 1, 0xFF901E, 2.5);
+setSeriesColor(chart, 2, 0x32CD32, 2.5);
+try { chart.HasLegend = true; chart.Legend.Position = -4107; } catch(e) {}
+\`\`\`
+
+### 8. 关键禁止
+- ❌ Style=-1 或 Type=65（返回 null）
+- ❌ 量级差异 >5x 的数据放同一图表
+- ❌ 辅助数据写在主数据下方（用户会看到杂乱行）
+- ❌ 图表放在数据正下方需要滚动很远（放右侧）
+- ❌ 不清理旧图表就创建新的（会越来越多）
+- ❌ 逗号分隔多区域 Range
+- ❌ 不设置颜色（默认灰色）
+`;
+
+function buildSystemPrompt(skills, todayStr, userMessage) {
   let prompt = `你是 Claude，嵌入在 WPS Office Excel 中的 AI 数据处理助手。你的代码直接运行在 WPS Plugin Host 上下文，可同步访问完整 ET API。\n今天的日期是 ${todayStr}。当用户询问"最近/近期"数据时，以今天为基准。\n\n`;
 
   for (const skill of skills) {
     prompt += skill.body + "\n\n";
+  }
+
+  const chartKw =
+    /图表|折线|柱状|饼图|chart|趋势图|走势图|可视化|visualization|图形|数据图/i;
+  if (userMessage && chartKw.test(userMessage)) {
+    prompt += CHART_STYLE_OVERRIDE + "\n\n";
   }
 
   return prompt;
@@ -162,8 +321,27 @@ console.log(`[command-loader] 已加载 ${ALL_COMMANDS.length} 个 commands`);
 const app = express();
 const PORT = 3001;
 
-app.use(cors({ origin: "*" }));
+app.use(
+  cors({
+    origin: [
+      "http://127.0.0.1:3001",
+      "http://localhost:3001",
+      "http://127.0.0.1:5173",
+      "http://localhost:5173",
+    ],
+  }),
+);
 app.use(express.json({ limit: "50mb" }));
+
+const distPath = join(__dirname, "dist");
+if (existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
+const wpsAddonPath = join(__dirname, "wps-addon");
+if (existsSync(wpsAddonPath)) {
+  app.use("/wps-addon", express.static(wpsAddonPath));
+}
 
 // ── 系统剪贴板读取（macOS pbpaste）───────────────────────────
 app.get("/clipboard", (req, res) => {
@@ -187,6 +365,9 @@ app.post("/extract-pdf", async (req, res) => {
     let buffer;
 
     if (filePath) {
+      if (!isPathSafe(filePath, TEMP_DIR)) {
+        return res.status(400).json({ ok: false, error: "filePath 不合法" });
+      }
       buffer = readFileSync(filePath);
     } else if (base64) {
       buffer = Buffer.from(base64, "base64");
@@ -278,6 +459,152 @@ app.get("/health", (req, res) => {
   });
 });
 
+// ── 会话历史存储 ─────────────────────────────────────────────
+const HISTORY_DIR = join(__dirname, ".chat-history");
+const MEMORY_FILE = join(HISTORY_DIR, "memory.json");
+try {
+  mkdirSync(HISTORY_DIR, { recursive: true });
+} catch {}
+
+function loadMemory() {
+  try {
+    return JSON.parse(readFileSync(MEMORY_FILE, "utf-8"));
+  } catch {
+    return {
+      preferences: {},
+      frequentActions: [],
+      lastModel: "claude-sonnet-4-6",
+    };
+  }
+}
+
+function saveMemory(mem) {
+  writeFileSync(MEMORY_FILE, JSON.stringify(mem, null, 2));
+}
+
+app.get("/sessions", (req, res) => {
+  try {
+    if (!existsSync(HISTORY_DIR)) return res.json([]);
+    const files = readdirSync(HISTORY_DIR)
+      .filter((f) => f.endsWith(".json") && f !== "memory.json")
+      .map((f) => {
+        try {
+          const data = JSON.parse(readFileSync(join(HISTORY_DIR, f), "utf-8"));
+          return {
+            id: data.id,
+            title: data.title || "未命名会话",
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+            messageCount: data.messages?.length || 0,
+            preview:
+              data.messages
+                ?.find((m) => m.role === "user")
+                ?.content?.slice(0, 60) || "",
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    res.json(files);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/sessions/:id", (req, res) => {
+  try {
+    if (!SESSION_ID_RE.test(req.params.id)) {
+      return res.status(400).json({ error: "无效的会话 ID" });
+    }
+    const filePath = join(HISTORY_DIR, `${req.params.id}.json`);
+    if (!existsSync(filePath))
+      return res.status(404).json({ error: "会话不存在" });
+    const data = JSON.parse(readFileSync(filePath, "utf-8"));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/sessions", (req, res) => {
+  try {
+    const { id, title, messages, model } = req.body;
+    if (!id) return res.status(400).json({ error: "id 不能为空" });
+    if (!SESSION_ID_RE.test(id)) {
+      return res.status(400).json({ error: "无效的会话 ID" });
+    }
+    const now = Date.now();
+    const filePath = join(HISTORY_DIR, `${id}.json`);
+
+    let session;
+    if (existsSync(filePath)) {
+      session = JSON.parse(readFileSync(filePath, "utf-8"));
+      session.messages = messages || session.messages;
+      session.title = title || session.title;
+      session.model = model || session.model;
+      session.updatedAt = now;
+    } else {
+      session = {
+        id,
+        title: title || "新会话",
+        messages: messages || [],
+        model,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+
+    writeFileSync(filePath, JSON.stringify(session, null, 2));
+
+    const mem = loadMemory();
+    if (model) mem.lastModel = model;
+    saveMemory(mem);
+
+    res.json({
+      ok: true,
+      session: {
+        id: session.id,
+        title: session.title,
+        updatedAt: session.updatedAt,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/sessions/:id", (req, res) => {
+  try {
+    if (!SESSION_ID_RE.test(req.params.id)) {
+      return res.status(400).json({ error: "无效的会话 ID" });
+    }
+    const filePath = join(HISTORY_DIR, `${req.params.id}.json`);
+    if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/memory", (req, res) => {
+  res.json(loadMemory());
+});
+
+app.post("/memory", (req, res) => {
+  try {
+    const mem = loadMemory();
+    Object.assign(mem, req.body);
+    saveMemory(mem);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── WPS 上下文中转 ─────────────────────────────────────────
 let _wpsContext = {
   workbookName: "",
@@ -360,7 +687,17 @@ app.post("/chat", (req, res) => {
   const lastUserMsg = messages[messages.length - 1]?.content || "";
   const todayStr = new Date().toISOString().split("T")[0];
   const matchedSkills = matchSkills(ALL_SKILLS, lastUserMsg);
-  let fullPrompt = buildSystemPrompt(matchedSkills, todayStr) + "\n";
+  let fullPrompt =
+    buildSystemPrompt(matchedSkills, todayStr, lastUserMsg) + "\n";
+
+  const memory = loadMemory();
+  if (memory.preferences && Object.keys(memory.preferences).length > 0) {
+    fullPrompt += `[用户偏好记忆]\n`;
+    for (const [k, v] of Object.entries(memory.preferences)) {
+      fullPrompt += `- ${k}: ${v}\n`;
+    }
+    fullPrompt += "\n";
+  }
 
   if (context) {
     fullPrompt += `[当前 Excel 上下文]\n${context}\n\n`;
@@ -381,6 +718,10 @@ app.post("/chat", (req, res) => {
       fullPrompt += `[用户上传了 ${imageAtts.length} 张图片]\n`;
       imageAtts.forEach((att) => {
         if (att.tempPath) {
+          if (!isPathSafe(att.tempPath, TEMP_DIR)) {
+            fullPrompt += `图片 ${att.name}: 路径无效，已跳过\n`;
+            return;
+          }
           try {
             const imgBuf = readFileSync(att.tempPath);
             const ext = att.name?.split(".").pop()?.toLowerCase() || "png";
@@ -536,9 +877,18 @@ app.post("/chat", (req, res) => {
   });
 });
 
+if (existsSync(distPath)) {
+  app.get("/{*path}", (req, res) => {
+    res.sendFile(join(distPath, "index.html"));
+  });
+}
+
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`\n✅ WPS Claude 代理服务器已启动`);
   console.log(`   地址: http://127.0.0.1:${PORT}`);
   console.log(`   健康检查: http://127.0.0.1:${PORT}/health`);
+  if (existsSync(distPath)) {
+    console.log(`   前端: http://127.0.0.1:${PORT}/ (dist 静态文件)`);
+  }
   console.log(`   代码执行桥: /execute-code, /pending-code, /code-result\n`);
 });

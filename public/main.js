@@ -75,6 +75,37 @@ if (_isPluginHost) {
     return out;
   }
 
+  function profileSelection(sel, sampleValues) {
+    var profile = { emptyCellCount: 0, hasFormulas: false };
+    try {
+      for (var r = 0; r < sampleValues.length; r++) {
+        var row = sampleValues[r];
+        if (!Array.isArray(row)) continue;
+        for (var c = 0; c < row.length; c++) {
+          if (row[c] === null || row[c] === undefined || row[c] === "") {
+            profile.emptyCellCount++;
+          }
+        }
+      }
+    } catch (e) {}
+    try {
+      var checkLimit = Math.min(10, sel.Rows.Count);
+      var checkCols = Math.min(5, sel.Columns.Count);
+      for (var r = 1; r <= checkLimit && !profile.hasFormulas; r++) {
+        for (var c = 1; c <= checkCols; c++) {
+          try {
+            var f = sel.Rows(r).Columns(c).Formula;
+            if (typeof f === "string" && f.charAt(0) === "=") {
+              profile.hasFormulas = true;
+              break;
+            }
+          } catch (e2) {}
+        }
+      }
+    } catch (e) {}
+    return profile;
+  }
+
   function getAddress(range) {
     try {
       var addr = range.Address();
@@ -119,8 +150,7 @@ if (_isPluginHost) {
     var ws;
     try {
       ws = wb.ActiveSheet;
-    } catch (e1) {
-    }
+    } catch (e1) {}
 
     try {
       var sheetsCol = wb.Sheets;
@@ -130,8 +160,7 @@ if (_isPluginHost) {
           result.sheetNames.push(sheetsCol.Item(i).Name);
         }
       }
-    } catch (e2) {
-    }
+    } catch (e2) {}
 
     try {
       var sel = Application.Selection;
@@ -160,18 +189,21 @@ if (_isPluginHost) {
             tooLargeToRead: true,
           };
         } else {
+          var sv = extractValues(sel, SAMPLE_LIMIT);
+          var prof = profileSelection(sel, sv);
           result.selection = {
             address: selAddr,
             sheetName: ws.Name || "",
             rowCount: rc,
             colCount: cc,
-            sampleValues: extractValues(sel, SAMPLE_LIMIT),
+            sampleValues: sv,
             hasMoreRows: rc > SAMPLE_LIMIT,
+            emptyCellCount: prof.emptyCellCount,
+            hasFormulas: prof.hasFormulas,
           };
         }
       }
-    } catch (e3) {
-    }
+    } catch (e3) {}
 
     try {
       if (ws) {
@@ -194,8 +226,7 @@ if (_isPluginHost) {
           };
         }
       }
-    } catch (e4) {
-    }
+    } catch (e4) {}
 
     return result;
   }

@@ -4,6 +4,34 @@ WPS Office Excel AI 助手——通过自然语言对话操控表格，由 Claud
 
 ## 版本日志
 
+### v1.2.0 (2026-02-25) — 数据驱动的能力补齐
+
+**Phase 4A: 新增 5 个 Skills（对齐五大能力板块）**
+- `data-cleaning`：数据清洗最佳实践（空值/去重/格式统一/异常值检测/分列）
+- `formula-operations`：公式运算规范（.Formula 写入/常用模板/纠错/WPS 限制）
+- `conditional-formatting`：条件格式与美化（FormatConditions API/色阶/一键美化方案）
+- `data-analysis`：数据解读与分析（统计方法/趋势/透视汇总/结论输出规范）
+- `financial-modeling`：金融建模（从 proxy-server.js 硬编码迁移为标准 skill）
+
+**Phase 4B: 新增 5 个 Commands（补齐高频缺失）**
+- `smart-split`（智能分列，参考日活 15.7w）
+- `freeze-header`（冻结表头，参考日活 8.7w）
+- `fill-cells`（AI 智能填充，参考日活 1.8w）
+- `beautify-table`（一键美化，用户调研 34% 需求）
+- `conditional-format`（条件格式）
+
+**Phase 4C: 上下文感知增强**
+- `matchSkills()` 支持双维度匹配：用户消息关键词 + WPS 选区特征（空值/公式）
+- Plugin Host 新增 `emptyCellCount`、`hasFormulas` 数据概况字段
+- 选区含空白 → 自动加载 data-cleaning skill
+- 选区含公式 → 自动加载 formula-operations skill
+
+**Bugfix**
+- 修复 `template-generation` 与 `wps-core-api` 的 Borders API 冲突
+- 统一 BGR 颜色速查表，新增 RGB 等价列
+- 删除 `buildSystemPrompt()` 中的 Borders 正则清理 hack
+- 补充 4 个 Commands 的 `argument-hint` 空白问题
+
 ### v1.1.0 (2026-02-25) — Cowork 风格模块化重构
 
 **Phase 3: Skills/Commands 模块化**（借鉴 Anthropic Cowork + OpenClaw 架构）
@@ -104,9 +132,11 @@ Claude 会生成 WPS JS 代码，点击 `[run]` 执行即可。
 
 ## 后续计划
 
-- [ ] Phase 3：Skills/Commands 模块化重构（借鉴 Anthropic Cowork 插件架构）
-- [ ] Phase 3：清理 debug 日志，按需加载 system prompt
-- [ ] Phase 4：MCP 连接器支持外部数据源
-- [ ] Phase 4：操作历史 + 撤销功能
+- [x] Phase 3：Skills/Commands 模块化重构（v1.1.0 已完成）
+- [x] Phase 4A：数据驱动能力补齐 — 5 Skills + 5 Commands（v1.2.0 已完成）
+- [x] Phase 4C：上下文感知 Skill 匹配（v1.2.0 已完成）
+- [ ] Phase 4D：MCP 连接器支持外部数据源
+- [ ] Phase 4D：操作历史 + 撤销功能
+- [ ] Phase 5：高级 Agent 模式（任务拆解 + 分步执行 + 逐步确认）
 - [ ] Phase 5：跨应用上下文（表格 → 演示 → 文档）
-- [ ] Phase 5：企业版后端（API Key 集中管理、审计日志）
+- [ ] Phase 6：企业版后端（API Key 集中管理、审计日志）

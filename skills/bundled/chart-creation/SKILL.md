@@ -17,8 +17,8 @@ metadata:
 ❌ 禁止使用 ws.ChartObjects.Add()（WPS 中不支持此方法）
 
 AddChart2(Style, XlChartType, Left, Top, Width, Height) 参数：
-- Style：图表样式编号（-1=默认样式）
-- XlChartType：4=xlLine(折线), 65=xlLineMarkers(折线+标记), 51=xlColumnClustered(柱状), 5=xlPie(饼图), 54=xlColumnStacked(堆叠柱状)
+- Style：图表样式编号（必须用 0 或正整数，禁止 -1）
+- XlChartType：4=xlLine(折线), 51=xlColumnClustered(柱状), 5=xlPie(饼图), 54=xlColumnStacked(堆叠柱状)
 - Left/Top/Width/Height：位置和大小（像素）
 
 ### 不支持的图表类型（会崩溃或空白）
@@ -42,7 +42,7 @@ try {
   var dataRange = ws.Range("A1:C20");
   var lastRow = 20;
   var chartTop = (lastRow + 2) * 20;
-  var shape = ws.Shapes.AddChart2(-1, 65, 20, chartTop, 560, 320);
+  var shape = ws.Shapes.AddChart2(0, 4, 20, chartTop, 600, 340);
   var chart = shape.Chart;
   chart.SetSourceData(dataRange);
   chart.HasTitle = true;

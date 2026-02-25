@@ -30,7 +30,7 @@ context:
 ### 格式层
 
 - ✅ 交替行背景色（偶数行浅色）
-- ✅ 全区域边框（Borders.LineStyle = 1）
+- ✅ 区域视觉分隔（用深浅背景色交替区分行列，禁止使用 Borders API）
 - ✅ 合理列宽（按内容设置，用 ws.Range("A:A").ColumnWidth）
 - ✅ 数字格式（金额 #,##0.00、日期 yyyy-mm-dd、百分比 0.0%、电话 @）
 
