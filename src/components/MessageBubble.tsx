@@ -272,13 +272,8 @@ function MessageBubble({
         {isStreamingContent && (
           <div className={styles.assistContent}>
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={markdownComponents(
-                message,
-                onCodeExecuted,
-                onRetryFix,
-                true,
-              )}
+              remarkPlugins={remarkPlugins}
+              components={streamingComponents}
             >
               {message.content}
             </ReactMarkdown>
@@ -290,13 +285,8 @@ function MessageBubble({
         {isDone && message.content && (
           <div className={styles.assistContent}>
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={markdownComponents(
-                message,
-                onCodeExecuted,
-                onRetryFix,
-                false,
-              )}
+              remarkPlugins={remarkPlugins}
+              components={doneComponents}
             >
               {message.content}
             </ReactMarkdown>
@@ -454,3 +444,13 @@ function ThumbDownIcon() {
     </svg>
   );
 }
+
+export default memo(MessageBubble, (prev, next) => {
+  return (
+    prev.message === next.message &&
+    prev.isApplying === next.isApplying &&
+    prev.onCodeExecuted === next.onCodeExecuted &&
+    prev.onApplyCode === next.onApplyCode &&
+    prev.onRetryFix === next.onRetryFix
+  );
+});
