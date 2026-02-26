@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import type { SessionMeta } from "../api/sessionStore";
 import { listSessions, deleteSession } from "../api/sessionStore";
 import styles from "./HistoryPanel.module.css";
@@ -10,7 +10,7 @@ interface Props {
   currentSessionId: string | null;
 }
 
-export default function HistoryPanel({
+const HistoryPanel = memo(function HistoryPanel({
   visible,
   onClose,
   onSelectSession,
@@ -89,7 +89,9 @@ export default function HistoryPanel({
       </div>
     </div>
   );
-}
+});
+
+export default HistoryPanel;
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
