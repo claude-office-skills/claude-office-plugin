@@ -2,6 +2,8 @@ export type MessageRole = "user" | "assistant" | "system";
 
 export type InteractionMode = "agent" | "plan" | "ask";
 
+export type AgentStatus = "idle" | "running" | "done" | "failed" | "paused";
+
 export interface ModeEnforcement {
   codeBridge?: boolean | string;
   codeBlockRender?: boolean | string;
@@ -41,6 +43,18 @@ export interface CodeBlock {
   result?: string;
   error?: string;
   diff?: DiffResult | null;
+}
+
+export interface AgentState {
+  id: string;
+  name: string;
+  status: AgentStatus;
+  messages: ChatMessage[];
+  mode: InteractionMode;
+  model: string;
+  createdAt: number;
+  updatedAt: number;
+  error?: string;
 }
 
 export interface SelectionContext {
