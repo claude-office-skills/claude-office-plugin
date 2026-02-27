@@ -3,7 +3,7 @@
 WPS Office Excel AI 助手——通过自然语言对话操控表格，由 Claude API 驱动。
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-1.6.0-green)
+![Version](https://img.shields.io/badge/version-2.0.0--dev-orange)
 ![Platform](https://img.shields.io/badge/platform-WPS%20Office-red)
 
 ## 功能特性
