@@ -2,9 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>claude-wps-plugin</title>
+    <script>new Image().src="http://127.0.0.1:3001/beacon?v=build_20260227_001&t="+Date.now();</script>
   </head>
   <body>
     <div id="root">
@@ -15,6 +19,7 @@
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>fetch("/beacon?v=20260227_v3&src=html").catch(function(){})</script>
     <!-- WPS 加载项 ribbon 绑定脚本：WPS 加载本页时执行，注册 ribbon 按钮回调 -->
     <script src="/main.js"></script>
   </body>

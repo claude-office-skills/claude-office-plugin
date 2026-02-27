@@ -6,7 +6,7 @@
  * 3. 代码执行桥：轮询 proxy 的待执行代码队列并在 WPS 上下文中执行
  */
 
-var TASKPANE_URL = "http://127.0.0.1:3001/";
+var TASKPANE_URL = "http://127.0.0.1:3001/?_t=" + Date.now();
 var PROXY_URL = "http://127.0.0.1:3001";
 var CTX_INTERVAL = 2000;
 var CODE_POLL_INTERVAL = 150;
@@ -37,11 +37,12 @@ function OnOpenClaudePanel() {
       } catch (e) {}
     }
 
-    var createFn = typeof wps.CreateTaskPane === "function"
-      ? wps.CreateTaskPane
-      : typeof wps.createTaskPane === "function"
-        ? wps.createTaskPane
-        : null;
+    var createFn =
+      typeof wps.CreateTaskPane === "function"
+        ? wps.CreateTaskPane
+        : typeof wps.createTaskPane === "function"
+          ? wps.createTaskPane
+          : null;
 
     if (!createFn) {
       alert("当前 WPS 版本不支持 TaskPane API，请更新 WPS Office 到最新版本。");
@@ -61,7 +62,8 @@ function OnOpenClaudePanel() {
     startBackgroundSync();
   } catch (e) {
     alert(
-      "打开 Claude 面板失败：" + e.message +
+      "打开 Claude 面板失败：" +
+        e.message +
         "\n\n请检查：\n1. 代理服务是否在运行（终端运行 curl http://127.0.0.1:3001/health）\n2. 如未运行，进入 ~/claude-wps-plugin 执行 node proxy-server.js",
     );
   }
@@ -75,7 +77,10 @@ function OnOpenJSDebugger() {
       typeof wps.PluginStorage.openDebugger === "function"
     ) {
       wps.PluginStorage.openDebugger();
-    } else if (typeof wps !== "undefined" && typeof wps.openDevTools === "function") {
+    } else if (
+      typeof wps !== "undefined" &&
+      typeof wps.openDevTools === "function"
+    ) {
       wps.openDevTools();
     } else if (
       typeof Application !== "undefined" &&
@@ -83,22 +88,31 @@ function OnOpenJSDebugger() {
       typeof Application.PluginStorage.openDebugger === "function"
     ) {
       Application.PluginStorage.openDebugger();
-    } else if (typeof wps !== "undefined" && typeof wps.showDevTools === "function") {
+    } else if (
+      typeof wps !== "undefined" &&
+      typeof wps.showDevTools === "function"
+    ) {
       wps.showDevTools();
     } else {
-      alert("JS 调试器在当前 WPS 版本下不可用。\n\n可尝试：菜单 → 开发工具 → 打开调试器");
+      alert(
+        "JS 调试器在当前 WPS 版本下不可用。\n\n可尝试：菜单 → 开发工具 → 打开调试器",
+      );
     }
   } catch (e) {
     alert("打开调试器失败：" + e.message);
   }
 }
 
-function GetClaudeIcon() {
-  return "claude-icon.png";
-}
-
-function GetDebugIcon() {
-  return "debug-icon.png";
+function GetImage(control) {
+  var controlId = "";
+  try {
+    controlId = control.Id || control.id || "";
+  } catch (e) {}
+  var iconPath = "images/claude-icon.png";
+  if (controlId === "OpenDebugger") {
+    iconPath = "images/debug-icon.png";
+  }
+  return iconPath;
 }
 
 // ── 右键 "Add to Chat" ─────────────────────────────────────
@@ -111,7 +125,8 @@ function OnAddToChat() {
     }
 
     var ws = Application.ActiveSheet;
-    var rawAddr2 = typeof sel.Address === "function" ? sel.Address() : sel.Address;
+    var rawAddr2 =
+      typeof sel.Address === "function" ? sel.Address() : sel.Address;
     var addr = String(rawAddr2).replace(/\$/g, "");
     var sheetName = ws.Name || "";
     var rowCount = sel.Rows.Count;
@@ -122,7 +137,8 @@ function OnAddToChat() {
     var values = [];
     try {
       var topLeft = CL(sel.Column) + sel.Row;
-      var botRight = CL(sel.Column + sampleCols - 1) + (sel.Row + sampleRows - 1);
+      var botRight =
+        CL(sel.Column + sampleCols - 1) + (sel.Row + sampleRows - 1);
       var batchVal = ws.Range(topLeft + ":" + botRight).Value2;
       if (batchVal) {
         if (sampleRows === 1 && sampleCols === 1) {
@@ -139,7 +155,9 @@ function OnAddToChat() {
                 outRow.push(cv === undefined || cv === null ? "" : cv);
               }
             } else {
-              outRow.push(srcRow === undefined || srcRow === null ? "" : srcRow);
+              outRow.push(
+                srcRow === undefined || srcRow === null ? "" : srcRow,
+              );
             }
             values.push(outRow);
           }
@@ -162,7 +180,9 @@ function OnAddToChat() {
     httpPost(PROXY_URL + "/add-to-chat", JSON.stringify(payload));
 
     var tsId = null;
-    try { tsId = wps.PluginStorage.getItem(TASKPANE_KEY); } catch (e) {}
+    try {
+      tsId = wps.PluginStorage.getItem(TASKPANE_KEY);
+    } catch (e) {}
     if (tsId) {
       try {
         var tp = wps.GetTaskPane(tsId);
@@ -175,9 +195,6 @@ function OnAddToChat() {
 }
 
 function OnAddinLoad(ribbonUI) {
-  if (typeof ribbonUI === "object") {
-    // ribbon 引用
-  }
   startBackgroundSync();
 }
 
@@ -185,8 +202,7 @@ window.ribbon_bindUI = function (bindUI) {
   bindUI({
     OnOpenClaudePanel: OnOpenClaudePanel,
     OnOpenJSDebugger: OnOpenJSDebugger,
-    GetClaudeIcon: GetClaudeIcon,
-    GetDebugIcon: GetDebugIcon,
+    GetImage: GetImage,
   });
 };
 
@@ -257,7 +273,8 @@ function collectWpsContext() {
       var sel = Application.Selection;
 
       if (sel && sel.Address) {
-        var rawAddr = typeof sel.Address === "function" ? sel.Address() : sel.Address;
+        var rawAddr =
+          typeof sel.Address === "function" ? sel.Address() : sel.Address;
         var addr = String(rawAddr).replace(/\$/g, "");
         var rowCount = sel.Rows.Count;
         var colCount = sel.Columns.Count;
@@ -318,7 +335,8 @@ function collectWpsContext() {
       var ws2 = Application.ActiveSheet;
       var ur = ws2.UsedRange;
       if (ur && ur.Address) {
-        var urAddr = typeof ur.Address === "function" ? ur.Address() : ur.Address;
+        var urAddr =
+          typeof ur.Address === "function" ? ur.Address() : ur.Address;
         result.usedRange = {
           address: String(urAddr).replace(/\$/g, ""),
           rowCount: ur.Rows.Count,
@@ -377,7 +395,9 @@ function snapshotUsedRange() {
       startCol: startCol,
       rowCount: rowCount,
       colCount: colCount,
-      address: String(typeof ur.Address === "function" ? ur.Address() : ur.Address).replace(/\$/g, ""),
+      address: String(
+        typeof ur.Address === "function" ? ur.Address() : ur.Address,
+      ).replace(/\$/g, ""),
       grid: grid,
     };
   } catch (e) {
@@ -388,13 +408,17 @@ function snapshotUsedRange() {
 function computeDiff(before, after) {
   if (!after) return null;
   if (!before) {
-    before = { grid: [], startRow: after.startRow, startCol: after.startCol, sheetName: after.sheetName, rowCount: 0, colCount: 0 };
+    before = {
+      grid: [],
+      startRow: after.startRow,
+      startCol: after.startCol,
+      sheetName: after.sheetName,
+      rowCount: 0,
+      colCount: 0,
+    };
   }
   var changes = [];
-  var maxRows = Math.max(
-    before.grid.length,
-    after.grid.length
-  );
+  var maxRows = Math.max(before.grid.length, after.grid.length);
   var maxCols = 0;
   for (var i = 0; i < maxRows; i++) {
     var bRow = before.grid[i] || [];
@@ -445,7 +469,11 @@ function pollAndExecuteCode() {
       var execResult = executeInWps(code);
 
       var afterSnap = snapshotUsedRange();
-      if (beforeSnap && afterSnap && beforeSnap.sheetName !== afterSnap.sheetName) {
+      if (
+        beforeSnap &&
+        afterSnap &&
+        beforeSnap.sheetName !== afterSnap.sheetName
+      ) {
         beforeSnap = null;
       }
       var diff = computeDiff(beforeSnap, afterSnap);
@@ -477,14 +505,22 @@ function _startAnimation(changes, id, result, diff) {
     rowMap[r].push(changes[i]);
   }
   var rowKeys = [];
-  for (var k in rowMap) { if (rowMap.hasOwnProperty(k)) rowKeys.push(Number(k)); }
-  rowKeys.sort(function(a, b) { return a - b; });
+  for (var k in rowMap) {
+    if (rowMap.hasOwnProperty(k)) rowKeys.push(Number(k));
+  }
+  rowKeys.sort(function (a, b) {
+    return a - b;
+  });
 
   try {
-    Application.ScreenUpdating = true;
     var ws = Application.ActiveSheet;
-    for (var i = 0; i < changes.length; i++) {
-      ws.Range(changes[i].cell).Value2 = "";
+    for (var ri = 0; ri < rowKeys.length; ri++) {
+      var cells = rowMap[rowKeys[ri]];
+      for (var ci = 0; ci < cells.length; ci++) {
+        try {
+          ws.Range(cells[ci].cell).Value2 = "";
+        } catch (e2) {}
+      }
     }
   } catch (e) {}
 
@@ -492,9 +528,10 @@ function _startAnimation(changes, id, result, diff) {
     rowMap: rowMap,
     rowKeys: rowKeys,
     currentIdx: 0,
+    tickWait: 0,
     id: id,
     result: result,
-    diff: diff
+    diff: diff,
   };
 }
 
@@ -502,8 +539,12 @@ function _processAnimRow() {
   var st = _animState;
   if (!st) return;
 
+  if (st.tickWait > 0) {
+    st.tickWait--;
+    return;
+  }
+
   if (st.currentIdx >= st.rowKeys.length) {
-    try { Application.ScreenUpdating = true; } catch(e){}
     httpPost(
       PROXY_URL + "/code-result",
       JSON.stringify({ id: st.id, result: st.result, diff: st.diff }),
@@ -517,12 +558,19 @@ function _processAnimRow() {
 
   try {
     var ws = Application.ActiveSheet;
-    for (var j = 0; j < rowCells.length; j++) {
-      ws.Range(rowCells[j].cell).Value2 = rowCells[j].after;
+    for (var ci = 0; ci < rowCells.length; ci++) {
+      var c = rowCells[ci];
+      try {
+        ws.Range(c.cell).Value2 = c.after;
+      } catch (e2) {}
     }
+    var firstCell = rowCells[0].cell;
+    var lastCell = rowCells[rowCells.length - 1].cell;
+    ws.Range(firstCell + ":" + lastCell).Select();
   } catch (e) {}
 
   st.currentIdx++;
+  st.tickWait = 1;
 }
 
 function executeInWps(code) {

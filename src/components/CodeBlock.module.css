@@ -1,9 +1,9 @@
 .wrapper {
   border-radius: 8px;
   overflow: hidden;
-  background: #1a1a2e;
+  background: var(--code-bg);
   margin: 8px 0;
-  border: 1px solid #2a2a3e;
+  border: 1px solid var(--code-border);
 }
 
 .header {
@@ -11,8 +11,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: #16162a;
-  border-bottom: 1px solid #2a2a3e;
+  background: var(--code-header);
+  border-bottom: 1px solid var(--code-border);
   min-height: 32px;
 }
 
@@ -25,7 +25,7 @@
 .lang {
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   font-size: 11px;
-  color: #8b8ba7;
+  color: var(--code-dim);
   text-transform: lowercase;
   font-weight: 500;
 }
@@ -33,7 +33,7 @@
 .lineCount {
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   font-size: 10px;
-  color: #555570;
+  color: var(--code-dim);
 }
 
 .streamingBadge {
@@ -63,7 +63,7 @@
 
 .toggleArrow {
   font-size: 8px;
-  color: #666;
+  color: var(--text-placeholder);
   display: inline-block;
   transition: transform 0.2s;
 }
@@ -76,7 +76,7 @@
   max-height: 300px;
   overflow-y: auto;
   overflow-x: auto;
-  background: #1a1a2e;
+  background: var(--code-bg);
 }
 
 .codeScroll::-webkit-scrollbar {
@@ -89,12 +89,12 @@
 }
 
 .codeScroll::-webkit-scrollbar-thumb {
-  background: #3a3a5e;
+  background: var(--code-border);
   border-radius: 3px;
 }
 
 .codeScroll::-webkit-scrollbar-thumb:hover {
-  background: #4a4a6e;
+  background: var(--code-dim);
 }
 
 .expandPrompt {
@@ -104,9 +104,9 @@
   gap: 8px;
   width: 100%;
   padding: 8px 12px;
-  background: #16162a;
+  background: var(--code-header);
   border: none;
-  border-top: 1px solid #2a2a3e;
+  border-top: 1px solid var(--code-border);
   cursor: pointer;
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   font-size: 11px;
@@ -115,13 +115,13 @@
 }
 
 .expandPrompt:hover {
-  background: #1e1e38;
+  background: var(--code-bg);
 }
 
 .expandDots {
   letter-spacing: 2px;
   font-size: 12px;
-  color: #555570;
+  color: var(--code-dim);
 }
 
 .headerActions {
@@ -139,11 +139,11 @@
 .statusError {
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   font-size: 10px;
-  color: #ef4444;
+  color: var(--error);
 }
 
 .copyBtn {
-  color: #6b6b8a;
+  color: var(--code-dim);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -155,7 +155,7 @@
 }
 
 .copyBtn:hover {
-  color: #a0a0c0;
+  color: var(--code-text);
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -179,7 +179,7 @@
 }
 
 .runBtn:disabled {
-  color: #555570;
+  color: var(--code-dim);
   background: transparent;
   border-color: transparent;
   cursor: default;
@@ -190,11 +190,11 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #0f0f1a;
+  background: var(--code-result);
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   font-size: 11px;
   color: #22c55e;
-  border-top: 1px solid #2a2a3e;
+  border-top: 1px solid var(--code-border);
 }
 
 .resultLabel {
@@ -213,8 +213,8 @@
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  background: var(--error-bg);
   padding: 2px 6px;
   border-radius: 3px;
   flex-shrink: 0;
@@ -230,7 +230,7 @@
 }
 
 .resultError {
-  color: #ef4444;
+  color: var(--error);
   flex-wrap: wrap;
 }
 
@@ -240,10 +240,10 @@
   gap: 4px;
   padding: 4px 12px;
   margin-top: 6px;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid var(--error-border);
   border-radius: 6px;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: var(--error-bg);
+  color: var(--error);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 11px;
   font-weight: 600;
@@ -256,5 +256,5 @@
 
 .fixBtn:hover {
   background: rgba(239, 68, 68, 0.2);
-  border-color: #ef4444;
+  border-color: var(--error);
 }

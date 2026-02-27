@@ -7,12 +7,12 @@
                   label="打开 Claude"
                   onAction="OnOpenClaudePanel"
                   size="large"
-                  getImage="GetClaudeIcon" />
+                  getImage="GetImage" />
           <button id="OpenDebugger"
                   label="JS 调试器"
                   onAction="OnOpenJSDebugger"
                   size="large"
-                  getImage="GetDebugIcon" />
+                  getImage="GetImage" />
         </group>
       </tab>
     </tabs>

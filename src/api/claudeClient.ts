@@ -8,17 +8,6 @@ import type { WpsContext, ChatMessage, AttachmentFile } from "../types";
 
 const PROXY_BASE = "http://127.0.0.1:3001";
 
-// #region agent log
-function _feDbg(loc: string, msg: string, data?: Record<string, unknown>) {
-  try {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${PROXY_BASE}/wps-debug-log`, false);
-    xhr.setRequestHeader("Content-Type", "application/json");
-    xhr.send(JSON.stringify({ sessionId: "165bed", location: `fe:${loc}`, message: msg, data: data || {}, timestamp: Date.now() }));
-  } catch {}
-}
-// #endregion
-
 /** 构建 Excel 上下文字符串 */
 function buildContextString(wpsCtx: WpsContext): string {
   const { selection, workbookName, sheetNames, usedRange } = wpsCtx;
@@ -108,6 +97,7 @@ function processSseLines(
   for (const line of lines) {
     if (!line.startsWith("data: ")) continue;
     const data = line.slice(6).trim();
+    if (!data) continue;
     try {
       const event = JSON.parse(data);
       if (event.type === "mode") {
@@ -123,12 +113,10 @@ function processSseLines(
         throw new Error(event.message);
       }
     } catch (parseErr) {
-      if (
-        parseErr instanceof Error &&
-        parseErr.message !== "Unexpected token"
-      ) {
-        throw parseErr;
+      if (parseErr instanceof SyntaxError) {
+        continue;
       }
+      throw parseErr;
     }
   }
   return tail;
@@ -168,8 +156,6 @@ export async function sendMessage(
   }
 
   const fullTextRef = { v: "" };
-  const streamStart = Date.now();
-  let progressCount = 0;
   let prevLen = 0;
 
   return new Promise<void>((resolve, reject) => {
@@ -187,30 +173,16 @@ export async function sendMessage(
       });
     }
 
-    // #region agent log
-    _feDbg("xhr-open", "XHR opening", { url: `${PROXY_BASE}/chat`, payloadLen: JSON.stringify(payload).length });
-    // #endregion
-
     xhr.onprogress = () => {
       const newData = xhr.responseText.slice(prevLen);
       prevLen = xhr.responseText.length;
       if (!newData) return;
 
-      progressCount++;
       buffer += newData;
-
-      // #region agent log
-      if (progressCount <= 3 || progressCount % 50 === 0) {
-        _feDbg("xhr-progress", "onprogress", { progressCount, newDataLen: newData.length, totalLen: prevLen, elapsed: Date.now() - streamStart, fullTextLen: fullTextRef.v.length, bufferPreview: buffer.substring(0, 200) });
-      }
-      // #endregion
 
       try {
         buffer = processSseLines(buffer, fullTextRef, callbacks);
       } catch (err) {
-        // #region agent log
-        _feDbg("xhr-progress-error", "processSseLines threw", { message: (err as Error).message, fullTextLen: fullTextRef.v.length, bufferPreview: buffer.substring(0, 300) });
-        // #endregion
         aborted = true;
         xhr.abort();
         reject(err instanceof Error ? err : new Error(String(err)));
@@ -218,9 +190,6 @@ export async function sendMessage(
     };
 
     xhr.onload = () => {
-      // #region agent log
-      _feDbg("xhr-onload", "XHR onload fired", { status: xhr.status, aborted, responseLen: xhr.responseText.length, fullTextLen: fullTextRef.v.length, elapsed: Date.now() - streamStart, progressCount });
-      // #endregion
       if (aborted) return;
       if (xhr.status !== 200) {
         reject(new Error(`代理服务器错误 ${xhr.status}: ${xhr.responseText}`));
@@ -232,9 +201,6 @@ export async function sendMessage(
         try {
           processSseLines(buffer, fullTextRef, callbacks);
         } catch (err) {
-          // #region agent log
-          _feDbg("xhr-onload-error", "processSseLines threw in onload", { message: (err as Error).message });
-          // #endregion
           reject(err instanceof Error ? err : new Error(String(err)));
           return;
         }
@@ -244,9 +210,6 @@ export async function sendMessage(
     };
 
     xhr.onerror = () => {
-      // #region agent log
-      _feDbg("xhr-onerror", "XHR onerror fired", { aborted, readyState: xhr.readyState, status: xhr.status, fullTextLen: fullTextRef.v.length, elapsed: Date.now() - streamStart, progressCount });
-      // #endregion
       if (aborted) {
         callbacks.onComplete(fullTextRef.v || "（已中止生成）");
         resolve();
@@ -256,9 +219,6 @@ export async function sendMessage(
     };
 
     xhr.onabort = () => {
-      // #region agent log
-      _feDbg("xhr-onabort", "XHR onabort fired", { fullTextLen: fullTextRef.v.length, elapsed: Date.now() - streamStart, progressCount });
-      // #endregion
       callbacks.onComplete(fullTextRef.v || "（已中止生成）");
       resolve();
     };

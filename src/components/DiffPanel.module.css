@@ -1,8 +1,8 @@
 .wrapper {
   margin: 6px 0;
-  border: 1px solid rgba(99, 179, 237, 0.3);
+  border: 1px solid var(--diff-border);
   border-radius: 8px;
-  background: rgba(99, 179, 237, 0.06);
+  background: var(--diff-bg);
   overflow: hidden;
   font-size: 12px;
 }
@@ -12,8 +12,8 @@
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  background: rgba(99, 179, 237, 0.1);
-  border-bottom: 1px solid rgba(99, 179, 237, 0.15);
+  background: var(--diff-header-bg);
+  border-bottom: 1px solid var(--diff-border);
 }
 
 .icon {
@@ -22,12 +22,12 @@
 
 .title {
   font-weight: 600;
-  color: #63b3ed;
+  color: var(--diff-color);
 }
 
 .sheet {
   margin-left: auto;
-  color: #888;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -40,11 +40,11 @@
   grid-template-columns: 60px 1fr 1fr;
   gap: 4px;
   padding: 4px 10px;
-  color: #888;
+  color: var(--text-muted);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .row {
@@ -56,11 +56,11 @@
 }
 
 .row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--border-subtle);
 }
 
 .colCell {
-  color: #a0aec0;
+  color: var(--text-secondary);
   font-family: "SF Mono", "Fira Code", monospace;
   font-size: 11px;
   font-weight: 500;
@@ -92,14 +92,15 @@
   width: 100%;
   padding: 6px;
   border: none;
-  background: rgba(99, 179, 237, 0.08);
-  color: #63b3ed;
+  background: var(--diff-header-bg);
+  color: var(--diff-color);
   font-size: 11px;
   cursor: pointer;
   transition: background 0.15s;
-  border-top: 1px solid rgba(99, 179, 237, 0.12);
+  border-top: 1px solid var(--diff-border);
 }
 
 .toggleBtn:hover {
-  background: rgba(99, 179, 237, 0.15);
+  background: var(--diff-bg);
+  filter: brightness(1.3);
 }

@@ -7,6 +7,8 @@ import ModeSelector from "./components/ModeSelector";
 import AttachmentMenu from "./components/AttachmentMenu";
 import QuickActionCards from "./components/QuickActionCards";
 import HistoryPanel from "./components/HistoryPanel";
+import ThemeToggle from "./components/ThemeToggle";
+import { useTheme } from "./hooks/useTheme";
 import { sendMessage, extractCodeBlocks, checkProxy } from "./api/claudeClient";
 import {
   getWpsContext,
@@ -39,6 +41,7 @@ const WELCOME_MESSAGE: ChatMessage = {
 };
 
 export default function App() {
+  const { theme, cycleTheme } = useTheme();
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [wpsCtx, setWpsCtx] = useState<WpsContext | null>(null);
@@ -98,9 +101,6 @@ export default function App() {
     const poll = async () => {
       if (stopped) return;
       const ok = await checkProxy();
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fc5e63'},body:JSON.stringify({sessionId:'fc5e63',location:'App.tsx:healthPoll',message:'Health check result',data:{ok,stopped},timestamp:Date.now(),hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       setProxyMissing(!ok);
       timer = setTimeout(poll, ok ? 30000 : 3000);
     };
@@ -125,7 +125,8 @@ export default function App() {
             .slice(0, 10)
             .map((r) => r.join("\t"))
             .join("\n");
-          const preview = data.rowCount > 10 ? rows + `\n... (共 ${data.rowCount} 行)` : rows;
+          const preview =
+            data.rowCount > 10 ? rows + `\n... (共 ${data.rowCount} 行)` : rows;
           setInput((prev) =>
             prev
               ? `${prev}\n\n📎 [${label}]\n${preview}`
@@ -139,11 +140,15 @@ export default function App() {
             colCount: data.colCount,
           });
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       if (!stopped) setTimeout(poll, 1000);
     };
     poll();
-    return () => { stopped = true; };
+    return () => {
+      stopped = true;
+    };
   }, []);
 
   // 启动时恢复最近会话
@@ -227,12 +232,20 @@ export default function App() {
   }, [messages]);
 
   const handleCodeExecuted = useCallback(
-    (msgId: string, blockId: string, result: string, error?: string, diff?: import("./types").DiffResult | null) => {
+    (
+      msgId: string,
+      blockId: string,
+      result: string,
+      error?: string,
+      diff?: import("./types").DiffResult | null,
+    ) => {
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== msgId) return msg;
           const updatedBlocks = msg.codeBlocks?.map((b) =>
-            b.id === blockId ? { ...b, executed: true, result, error, diff } : b,
+            b.id === blockId
+              ? { ...b, executed: true, result, error, diff }
+              : b,
           );
           return { ...msg, codeBlocks: updatedBlocks };
         }),
@@ -327,23 +340,6 @@ ${code}
   }, [wpsCtx]);
 
   const handleModeChange = useCallback((mode: InteractionMode) => {
-    // #region agent log
-    fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "fc5e63",
-      },
-      body: JSON.stringify({
-        sessionId: "fc5e63",
-        location: "App.tsx:handleModeChange",
-        message: "Mode changed",
-        data: { newMode: mode },
-        timestamp: Date.now(),
-        hypothesisId: "A",
-      }),
-    }).catch(() => {});
-    // #endregion
     setCurrentMode(mode);
     localStorage.setItem("wps-claude-mode", mode);
   }, []);
@@ -356,9 +352,13 @@ ${code}
     setAttachedFiles((prev) => prev.filter((f) => f.name !== name));
   }, []);
 
+  const MAX_INPUT_LENGTH = 20000;
+
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setInput(e.target.value);
+      if (e.target.value.length <= MAX_INPUT_LENGTH) {
+        setInput(e.target.value);
+      }
     },
     [],
   );
@@ -459,202 +459,174 @@ ${code}
     let firstTokenReceived = false;
 
     const modeSnapshot = currentMode;
-    // #region agent log
-    fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "fc5e63",
-      },
-      body: JSON.stringify({
-        sessionId: "fc5e63",
-        location: "App.tsx:handleSend",
-        message: "Sending with mode",
-        data: { modeSnapshot, currentMode },
-        timestamp: Date.now(),
-        hypothesisId: "B",
-      }),
-    }).catch(() => {});
-    // #endregion
 
-    await sendMessage(
-      userText,
-      messages.filter((m) => m.id !== "welcome"),
-      wpsCtx ?? { workbookName: "", sheetNames: [], selection: null },
-      {
-        onThinking: (text) => {
-          thinkingText += text;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, thinkingContent: thinkingText }
-                : m,
-            ),
-          );
-        },
-        onToken: (token) => {
-          fullText += token;
-          const updates: Partial<ChatMessage> = { content: fullText };
-          if (!firstTokenReceived) {
-            firstTokenReceived = true;
-            updates.thinkingMs = Date.now() - thinkingStart;
-            setProxyMissing(false);
-            // #region agent log
-            fetch('http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'38bc8c'},body:JSON.stringify({sessionId:'38bc8c',location:'App.tsx:onToken:first',message:'First token received',data:{tokenLen:token.length,elapsed:Date.now()-thinkingStart},timestamp:Date.now(),hypothesisId:'H-stream-1'})}).catch(()=>{});
-            // #endregion
-          }
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId ? { ...m, ...updates } : m,
-            ),
-          );
-        },
-        onComplete: async (text) => {
-          // #region agent log
-          const hasCodeBlocks = /```[\s\S]*?```/.test(text);
-          fetch(
-            "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Debug-Session-Id": "fc5e63",
-              },
-              body: JSON.stringify({
-                sessionId: "fc5e63",
-                location: "App.tsx:onComplete",
-                message: "Response complete",
-                data: {
-                  modeSnapshot,
-                  textLen: text.length,
-                  hasCodeBlocks,
-                  first100: text.slice(0, 100),
-                },
-                timestamp: Date.now(),
-                hypothesisId: "C",
-              }),
-            },
-          ).catch(() => {});
-          // #endregion
-          // #region agent log
-          fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fc5e63'},body:JSON.stringify({sessionId:'fc5e63',location:'App.tsx:onComplete:modeCheck',message:'Mode branch decision',data:{modeSnapshot,isAskBranch:modeSnapshot==="ask",textLen:text.length,hasCodePattern:/```[\w]*\n/.test(text)},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
-          if (modeSnapshot === "ask") {
-            const strippedText = text.replace(
-              /```[\w]*\n[\s\S]*?```/g,
-              "_(此处为代码操作，请切换至 Agent 模式执行)_",
+    try {
+      await sendMessage(
+        userText,
+        messages.filter((m) => m.id !== "welcome"),
+        wpsCtx ?? { workbookName: "", sheetNames: [], selection: null },
+        {
+          onThinking: (text) => {
+            thinkingText += text;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, thinkingContent: thinkingText }
+                  : m,
+              ),
             );
+          },
+          onToken: (token) => {
+            fullText += token;
+            const updates: Partial<ChatMessage> = { content: fullText };
+            if (!firstTokenReceived) {
+              firstTokenReceived = true;
+              updates.thinkingMs = Date.now() - thinkingStart;
+              setProxyMissing(false);
+            }
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId ? { ...m, ...updates } : m,
+              ),
+            );
+          },
+          onComplete: async (text) => {
+            if (modeSnapshot === "ask") {
+              const strippedText = text.replace(
+                /```[\w]*\n[\s\S]*?```/g,
+                "_(此处为代码操作，请切换至 Agent 模式执行)_",
+              );
 
-            const hadCode = strippedText !== text;
-            const ACTION_HINTS =
-              /切换.{0,4}Agent|switch.{0,6}agent|需要执行|需要操作|建议.{0,4}Agent/i;
-            const suggestSwitch = hadCode || ACTION_HINTS.test(text);
+              const hadCode = strippedText !== text;
+              const ACTION_HINTS =
+                /切换.{0,4}Agent|switch.{0,6}agent|需要执行|需要操作|建议.{0,4}Agent/i;
+              const suggestSwitch = hadCode || ACTION_HINTS.test(text);
 
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        content: strippedText,
+                        isStreaming: false,
+                        codeBlocks: [],
+                        suggestAgentSwitch: suggestSwitch,
+                      }
+                    : m,
+                ),
+              );
+              setLoading(false);
+              return;
+            }
+
+            const rawBlocks = extractCodeBlocks(text);
+            const codeBlocks: CodeBlock[] = rawBlocks.map((b) => ({
+              id: nanoid(),
+              language: b.language,
+              code: b.code,
+            }));
+
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, content: text, isStreaming: false, codeBlocks }
+                  : m,
+              ),
+            );
+            setLoading(false);
+
+            const shouldAutoExecute = modeSnapshot === "agent";
+
+            if (shouldAutoExecute && codeBlocks.length > 0) {
+              setApplyingMsgId(assistantMsgId);
+              for (let _bi = 0; _bi < codeBlocks.length; _bi++) {
+                const block = codeBlocks[_bi];
+                try {
+                  const { result, diff } = await executeCode(block.code);
+                  setMessages((prev) =>
+                    prev.map((m) => {
+                      if (m.id !== assistantMsgId) return m;
+                      const updated = m.codeBlocks?.map((b) =>
+                        b.id === block.id
+                          ? { ...b, executed: true, result, diff }
+                          : b,
+                      );
+                      return { ...m, codeBlocks: updated };
+                    }),
+                  );
+                } catch (err) {
+                  const errorMsg =
+                    err instanceof Error ? err.message : String(err);
+                  setMessages((prev) =>
+                    prev.map((m) => {
+                      if (m.id !== assistantMsgId) return m;
+                      const updated = m.codeBlocks?.map((b) =>
+                        b.id === block.id
+                          ? { ...b, executed: true, error: errorMsg }
+                          : b,
+                      );
+                      return { ...m, codeBlocks: updated };
+                    }),
+                  );
+                  break;
+                }
+              }
+              setApplyingMsgId(null);
+            }
+          },
+          onError: (err) => {
+            const isProxyError =
+              err.message.includes("fetch") ||
+              err.message.includes("Failed") ||
+              err.message.includes("代理");
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantMsgId
                   ? {
                       ...m,
-                      content: strippedText,
+                      content: isProxyError
+                        ? "**错误**：无法连接代理服务器。\n\n请在终端运行：\n```\ncd ~/需求讨论/claude-wps-plugin\nnode proxy-server.js\n```"
+                        : `**错误**：${err.message}`,
                       isStreaming: false,
-                      codeBlocks: [],
-                      suggestAgentSwitch: suggestSwitch,
+                      isError: true,
                     }
                   : m,
               ),
             );
+            setProxyMissing(true);
             setLoading(false);
-            return;
-          }
-
-          const rawBlocks = extractCodeBlocks(text);
-          const codeBlocks: CodeBlock[] = rawBlocks.map((b) => ({
-            id: nanoid(),
-            language: b.language,
-            code: b.code,
-          }));
-
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, content: text, isStreaming: false, codeBlocks }
-                : m,
-            ),
-          );
-          setLoading(false);
-
-          const shouldAutoExecute = modeSnapshot === "agent";
-          // #region agent log
-          fetch('http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fc5e63'},body:JSON.stringify({sessionId:'fc5e63',location:'App.tsx:autoExec',message:'Auto-execute decision',data:{modeSnapshot,shouldAutoExecute,codeBlockCount:codeBlocks.length,firstBlockLang:codeBlocks[0]?.language,firstBlockFirst80:codeBlocks[0]?.code?.slice(0,80)},timestamp:Date.now(),hypothesisId:'G'})}).catch(()=>{});
-          // #endregion
-
-          if (shouldAutoExecute && codeBlocks.length > 0) {
-            setApplyingMsgId(assistantMsgId);
-            for (let _bi = 0; _bi < codeBlocks.length; _bi++) {
-              const block = codeBlocks[_bi];
-              try {
-                const { result, diff } = await executeCode(block.code);
-                setMessages((prev) =>
-                  prev.map((m) => {
-                    if (m.id !== assistantMsgId) return m;
-                    const updated = m.codeBlocks?.map((b) =>
-                      b.id === block.id ? { ...b, executed: true, result, diff } : b,
-                    );
-                    return { ...m, codeBlocks: updated };
-                  }),
-                );
-              } catch (err) {
-                const errorMsg =
-                  err instanceof Error ? err.message : String(err);
-                setMessages((prev) =>
-                  prev.map((m) => {
-                    if (m.id !== assistantMsgId) return m;
-                    const updated = m.codeBlocks?.map((b) =>
-                      b.id === block.id
-                        ? { ...b, executed: true, error: errorMsg }
-                        : b,
-                    );
-                    return { ...m, codeBlocks: updated };
-                  }),
-                );
-                break;
+          },
+        },
+        {
+          model: selectedModel,
+          mode: currentMode,
+          attachments:
+            currentAttachments.length > 0 ? currentAttachments : undefined,
+          signal: controller.signal,
+          webSearch: webSearchEnabled,
+        },
+      );
+    } catch (unexpectedErr) {
+      // 兜底捕获：防止 sendMessage 内部未处理的异常导致 loading 状态永久卡死
+      const errMsg =
+        unexpectedErr instanceof Error
+          ? unexpectedErr.message
+          : String(unexpectedErr);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsgId
+            ? {
+                ...m,
+                content: `**错误**：${errMsg}`,
+                isStreaming: false,
+                isError: true,
               }
-            }
-            setApplyingMsgId(null);
-          }
-        },
-        onError: (err) => {
-          const isProxyError =
-            err.message.includes("fetch") ||
-            err.message.includes("Failed") ||
-            err.message.includes("代理");
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? {
-                    ...m,
-                    content: isProxyError
-                      ? "**错误**：无法连接代理服务器。\n\n请在终端运行：\n```\ncd ~/需求讨论/claude-wps-plugin\nnode proxy-server.js\n```"
-                      : `**错误**：${err.message}`,
-                    isStreaming: false,
-                    isError: true,
-                  }
-                : m,
-            ),
-          );
-          setProxyMissing(true);
-          setLoading(false);
-        },
-      },
-      {
-        model: selectedModel,
-        mode: currentMode,
-        attachments:
-          currentAttachments.length > 0 ? currentAttachments : undefined,
-        signal: controller.signal,
-        webSearch: webSearchEnabled,
-      },
-    );
+            : m,
+        ),
+      );
+      setLoading(false);
+      setApplyingMsgId(null);
+    }
 
     abortRef.current = null;
     lastSentInputRef.current = "";
@@ -927,6 +899,7 @@ ${code}
           <span className={styles.betaBadge}>Beta</span>
         </div>
         <div className={styles.headerActions}>
+          <ThemeToggle theme={theme} onCycle={cycleTheme} />
           <button
             className={styles.headerBtn}
             onClick={handleOpenHistory}

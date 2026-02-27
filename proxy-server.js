@@ -18,7 +18,6 @@ import {
   readdirSync,
   existsSync,
   unlinkSync,
-  appendFileSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join, dirname, resolve } from "path";
@@ -28,17 +27,6 @@ const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 const yaml = require("js-yaml");
 
-// #region agent log
-const __debug_dir = dirname(fileURLToPath(import.meta.url));
-const __debug_log = join(__debug_dir, "debug-165bed.log");
-function _dbg(loc, msg, data) {
-  try {
-    appendFileSync(__debug_log, JSON.stringify({ sessionId: "165bed", location: loc, message: msg, data, timestamp: Date.now() }) + "\n");
-  } catch (_) {}
-}
-_dbg("proxy-server.js:startup", "Proxy server module loaded successfully", { nodeVersion: process.version, pid: process.pid });
-// #endregion
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function resolveClaudePath() {
@@ -46,10 +34,13 @@ function resolveClaudePath() {
     return process.env.CLAUDE_PATH;
   }
   try {
-    const found = execSync("which claude 2>/dev/null || command -v claude 2>/dev/null", {
-      encoding: "utf-8",
-      timeout: 5000,
-    }).trim();
+    const found = execSync(
+      "which claude 2>/dev/null || command -v claude 2>/dev/null",
+      {
+        encoding: "utf-8",
+        timeout: 5000,
+      },
+    ).trim();
     if (found && existsSync(found)) return found;
   } catch {}
 
@@ -68,9 +59,6 @@ function resolveClaudePath() {
 }
 
 const RESOLVED_CLAUDE_PATH = resolveClaudePath();
-// #region agent log
-_dbg("proxy-server.js:claude-path", "Claude CLI resolved", { path: RESOLVED_CLAUDE_PATH, exists: existsSync(RESOLVED_CLAUDE_PATH) });
-// #endregion
 
 function isPathSafe(filePath, allowedDir) {
   const resolved = resolve(filePath);
@@ -295,35 +283,21 @@ function buildSystemPrompt(skills, todayStr, userMessage, modeSkill) {
 - 如果用户切换了工作表，以最新上下文中的表名为准
 - 生成的代码必须操作当前活动工作表，不要引用历史对话中的旧表名
 
-## ⚠️ 代码长度限制（必须遵守）
-你生成的 JavaScript 代码总长度必须控制在 3000 字符以内。超长代码会被截断导致语法错误！
-- 生成超过 20 行数据时，必须用「小数组 + for 循环 + Math.random()」随机组合生成
-- 绝对禁止硬编码大量数据行（如手动写 100+ 行数组）
-
-## ⚠️ 逐行流式写入格式（必须遵守）
-写入多行数据到单元格时，你必须使用逐行分块格式，让用户看到数据逐行出现的动画效果。
-规则：
-1. 代码开头放变量声明（序言），如 var ws = Application.ActiveSheet;
-2. 用 \`// ---ROW---\` 标记分隔每一行数据的写入（标记必须独占一行）
-3. 每个 ROW 分块写入一行的所有单元格（用 ws.Range("X").Value2 = ...）
-4. 不要使用二维数组批量写入（禁止 Range.Value2 = [[...]]），必须逐单元格赋值
-5. \`// ---ROW---\` 标记只能出现在顶层语句之间，绝对不能放在 for/while/if 的花括号 {} 内部
-6. 20 行以内的数据，逐行硬编码每一行，用 \`// ---ROW---\` 分隔
-7. 超过 20 行的数据，用 for 循环 + 小数组随机生成，不需要加 \`// ---ROW---\`
-
-示例（写入 3 行 2 列的表格）：
-\`\`\`
-var ws = Application.ActiveSheet;
-// ---ROW---
-ws.Range("A1").Value2 = "姓名"; ws.Range("B1").Value2 = "年龄";
-// ---ROW---
-ws.Range("A2").Value2 = "张三"; ws.Range("B2").Value2 = 25;
-// ---ROW---
-ws.Range("A3").Value2 = "李四"; ws.Range("B3").Value2 = 30;
-\`\`\`
+## ⚠️ 代码生成要求（必须遵守）
+- 代码必须是一个完整的、可独立执行的 JavaScript 块
+- 生成超过 20 行数据时，优先用 for 循环 + 数组 生成，避免逐行硬编码
+- 禁止生成超过 200 行的代码，优先简化设计
+- 代码最后一行必须是一个返回值字符串（如 "已完成"）
 
 ## ⚠️ 始终使用 ActiveSheet（必须遵守）
 操作当前表时，必须用 var ws = Application.ActiveSheet; 绝对不要用 wb.Sheets.Item("表名") 硬编码 sheet 名称（用户可能已重命名 sheet，会导致操作错误的表或报错）。
+
+## ⚠️ 字体颜色规则（必须遵守）
+设置单元格背景色（Interior.Color）时，**必须同时设置对比鲜明的字体颜色**（Font.Color），否则文字会因颜色与背景相同而"隐身"。
+- 深色背景 → 白色字体：ws.Range("A1").Font.Color = RGB(255,255,255)
+- 浅色背景 → 黑色字体：ws.Range("A1").Font.Color = RGB(0,0,0)
+- **绝对禁止**只设 Interior.Color 不设 Font.Color
+- 先写入数据（Value2），再设置格式（Font.Color、Interior.Color）
 
 \n`;
 
@@ -389,48 +363,60 @@ console.log(`[command-loader] 已加载 ${ALL_COMMANDS.length} 个 commands`);
 const app = express();
 const PORT = 3001;
 
+const ALLOWED_ORIGINS = [
+  "http://127.0.0.1:3001",
+  "http://localhost:3001",
+  "http://127.0.0.1:5173",
+  "http://localhost:5173",
+];
+
 app.use(
   cors({
-    origin: [
-      "http://127.0.0.1:3001",
-      "http://localhost:3001",
-      "http://127.0.0.1:5173",
-      "http://localhost:5173",
-    ],
+    origin(origin, cb) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      cb(null, false);
+    },
+    credentials: true,
   }),
 );
-app.use(express.json({ limit: "50mb" }));
+// 普通 JSON 请求限制 10mb（含附件文本内容）；图片走 /upload-temp 单独上传
+app.use(express.json({ limit: "10mb" }));
 
 const distPath = join(__dirname, "dist");
-// #region agent log
-_dbg("proxy-server.js:static", "Checking dist path", { distPath, exists: existsSync(distPath) });
-// #endregion
 if (existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(
+    express.static(distPath, {
+      etag: false,
+      lastModified: false,
+      setHeaders: (res) => {
+        res.setHeader(
+          "Cache-Control",
+          "no-store, no-cache, must-revalidate, max-age=0",
+        );
+        res.setHeader("Pragma", "no-cache");
+      },
+    }),
+  );
 }
 
 const wpsAddonPath = join(__dirname, "wps-addon");
-// #region agent log
-_dbg("proxy-server.js:static", "Checking wps-addon path", { wpsAddonPath, exists: existsSync(wpsAddonPath) });
-// #endregion
 if (existsSync(wpsAddonPath)) {
-  app.use("/wps-addon", express.static(wpsAddonPath, {
-    etag: false,
-    lastModified: false,
-    setHeaders: (res) => {
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-    },
-  }));
+  app.use(
+    "/wps-addon",
+    express.static(wpsAddonPath, {
+      etag: false,
+      lastModified: false,
+      setHeaders: (res) => {
+        res.setHeader(
+          "Cache-Control",
+          "no-store, no-cache, must-revalidate, max-age=0",
+        );
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      },
+    }),
+  );
 }
-
-// #region agent log
-app.use((req, res, next) => {
-  _dbg("proxy-server.js:request", "Incoming request", { method: req.method, url: req.url, origin: req.headers.origin || "none" });
-  next();
-});
-// #endregion
 
 // ── 系统剪贴板读取（macOS）─────────────────────────────────────
 app.get("/clipboard", (req, res) => {
@@ -521,6 +507,27 @@ try {
 } catch {}
 
 let _tempFileCounter = 0;
+
+// 定期清理超过 1 小时的临时文件，防止磁盘积累
+const TEMP_FILE_MAX_AGE_MS = 60 * 60 * 1000;
+setInterval(
+  () => {
+    try {
+      const now = Date.now();
+      const files = readdirSync(TEMP_DIR);
+      for (const file of files) {
+        const filePath = join(TEMP_DIR, file);
+        try {
+          const { mtimeMs } = require("fs").statSync(filePath);
+          if (now - mtimeMs > TEMP_FILE_MAX_AGE_MS) {
+            unlinkSync(filePath);
+          }
+        } catch {}
+      }
+    } catch {}
+  },
+  10 * 60 * 1000,
+);
 
 app.post("/upload-temp", (req, res) => {
   try {
@@ -762,6 +769,7 @@ app.get("/wps-context", (req, res) => {
 });
 
 // ── 代码执行桥 ─────────────────────────────────────────────
+const CODE_QUEUE_MAX = 50;
 let _codeQueue = [];
 let _codeResults = {};
 let _codeIdCounter = 0;
@@ -771,30 +779,14 @@ app.post("/execute-code", (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: "code 不能为空" });
 
-  const parentId = `exec-${++_codeIdCounter}-${Date.now()}`;
-
-  if (code.includes("// ---ROW---")) {
-    const parts = code.split("// ---ROW---");
-    const preamble = parts[0].trim();
-    const rowChunks = parts.slice(1).map((p) => p.trim()).filter(Boolean);
-
-    if (rowChunks.length > 1) {
-      const chunkIds = [];
-      for (let i = 0; i < rowChunks.length; i++) {
-        const chunkId = `${parentId}_chunk_${i}`;
-        const chunkCode = preamble + "\n" + rowChunks[i];
-        _codeQueue.push({ id: chunkId, code: chunkCode, submittedAt: Date.now() });
-        chunkIds.push(chunkId);
-      }
-      _codeChunkMap[parentId] = { chunkIds, total: chunkIds.length, completed: 0, errors: [], diffs: [] };
-      // #region agent log
-      _dbg("proxy:execute-code", "Split into ROW chunks", { parentId, chunkCount: chunkIds.length, preambleLen: preamble.length });
-      // #endregion
-      return res.json({ ok: true, id: parentId });
-    }
+  if (_codeQueue.length >= CODE_QUEUE_MAX) {
+    return res.status(429).json({ error: "代码执行队列已满，请稍后重试" });
   }
 
-  _codeQueue.push({ id: parentId, code, submittedAt: Date.now() });
+  const parentId = `exec-${++_codeIdCounter}-${Date.now()}`;
+
+  const cleanCode = code.replace(/\/\/\s*---ROW---/g, "");
+  _codeQueue.push({ id: parentId, code: cleanCode, submittedAt: Date.now() });
   res.json({ ok: true, id: parentId });
 });
 
@@ -820,16 +812,26 @@ app.post("/code-result", (req, res) => {
       if (diff) parent.diffs.push(diff);
 
       if (parent.completed >= parent.total) {
-        const mergedDiff = parent.diffs.length > 0
-          ? { changeCount: parent.diffs.reduce((s, d) => s + (d.changeCount || 0), 0), changes: parent.diffs.flatMap((d) => d.changes || []) }
-          : null;
+        const mergedDiff =
+          parent.diffs.length > 0
+            ? {
+                changeCount: parent.diffs.reduce(
+                  (s, d) => s + (d.changeCount || 0),
+                  0,
+                ),
+                changes: parent.diffs.flatMap((d) => d.changes || []),
+              }
+            : null;
         _codeResults[parentId] = {
           result: parent.errors.length > 0 ? null : (result ?? "执行成功"),
           error: parent.errors.length > 0 ? parent.errors.join("; ") : null,
           diff: mergedDiff,
           completedAt: Date.now(),
         };
-        setTimeout(() => { delete _codeResults[parentId]; delete _codeChunkMap[parentId]; }, 60000);
+        setTimeout(() => {
+          delete _codeResults[parentId];
+          delete _codeChunkMap[parentId];
+        }, 60000);
       }
     }
     return res.json({ ok: true });
@@ -875,11 +877,28 @@ app.get("/add-to-chat/poll", (_req, res) => {
 const ALLOWED_MODELS = new Set([
   "claude-sonnet-4-6",
   "claude-opus-4-6",
+  "claude-sonnet-4-5",
+  "claude-opus-4-5",
   "claude-haiku-4-5",
 ]);
 
+// ── 聊天速率限制（本地单用户场景：5 秒内最多 3 次并发）──────
+let _activeChats = 0;
+const CHAT_CONCURRENCY_MAX = 3;
+let _lastChatTime = 0;
+const CHAT_MIN_INTERVAL_MS = 500;
+
 // ── 聊天接口（SSE 流式响应）──────────────────────────────────
 app.post("/chat", (req, res) => {
+  const now = Date.now();
+  if (_activeChats >= CHAT_CONCURRENCY_MAX) {
+    return res.status(429).json({ error: "当前并发请求过多，请稍后重试" });
+  }
+  if (now - _lastChatTime < CHAT_MIN_INTERVAL_MS) {
+    return res.status(429).json({ error: "请求过于频繁，请稍后重试" });
+  }
+  _lastChatTime = now;
+  _activeChats++;
   const { messages, context, model, attachments, webSearch, mode } = req.body;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -891,26 +910,6 @@ app.post("/chat", (req, res) => {
   const currentMode = mode || "agent";
   const modeSkill = ALL_MODES.get(currentMode) || ALL_MODES.get("agent");
   const enforcement = modeSkill?.enforcement || {};
-  // #region agent log
-  try {
-    require("fs").appendFileSync(
-      "/Users/kingsoft/需求讨论/.cursor/debug-fc5e63.log",
-      JSON.stringify({
-        sessionId: "fc5e63",
-        location: "proxy-server.js:chat",
-        message: "Chat request received",
-        data: {
-          mode,
-          currentMode,
-          enforcement,
-          modeSkillName: modeSkill?.name,
-        },
-        timestamp: Date.now(),
-        hypothesisId: "D",
-      }) + "\n",
-    );
-  } catch {}
-  // #endregion
   const skipCodeBridge =
     enforcement.codeBridge === false || enforcement.codeBridge === "false";
 
@@ -1019,7 +1018,6 @@ app.post("/chat", (req, res) => {
     "--verbose",
     "--output-format",
     "stream-json",
-    "--include-partial-messages",
     "--max-turns",
     maxTurns,
     "--model",
@@ -1029,17 +1027,29 @@ app.post("/chat", (req, res) => {
   if (webSearch) {
     cliArgs.push("--allowedTools", "WebSearch");
   }
-  // #region agent log
-  _dbg("proxy-server.js:chat-spawn", "Spawning claude CLI", { claudePath, cliArgs, promptLen: fullPrompt.length });
-  // #endregion
-
-  const child = spawn(claudePath, cliArgs, { env: { ...process.env } });
-
-  // #region agent log
-  child.on("error", (err) => {
-    _dbg("proxy-server.js:chat-spawn-error", "Spawn error", { message: err.message, code: err.code });
-  });
-  // #endregion
+  const ENV_WHITELIST = [
+    "HOME",
+    "USER",
+    "PATH",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "NODE_PATH",
+    "NVM_DIR",
+    "NVM_BIN",
+    "CLAUDE_PATH",
+    "ANTHROPIC_API_KEY",
+  ];
+  const cleanEnv = {};
+  for (const key of ENV_WHITELIST) {
+    if (process.env[key]) cleanEnv[key] = process.env[key];
+  }
+  const child = spawn(claudePath, cliArgs, { env: cleanEnv });
 
   res.write(
     `data: ${JSON.stringify({ type: "mode", mode: currentMode, enforcement })}\n\n`,
@@ -1099,29 +1109,39 @@ app.post("/chat", (req, res) => {
     }
   });
 
-  // #region agent log
   let _stderrBuf = "";
-  // #endregion
   child.stderr.on("data", (data) => {
     const chunk = data.toString().trim();
-    // #region agent log
     _stderrBuf += chunk + "\n";
-    _dbg("proxy-server.js:chat-stderr", "CLI stderr", { chunk: chunk.substring(0, 500) });
-    // #endregion
     console.error("[proxy] stderr:", chunk);
   });
 
   child.on("close", (code, signal) => {
-    // #region agent log
-    _dbg("proxy-server.js:chat-close", "CLI process closed", {
-      code, signal, resultTextLen: resultText.length, tokenCount: _tokenCount,
-      stderrPreview: _stderrBuf.substring(0, 500),
-      elapsed: Date.now() - _streamStartTime,
-    });
-    // #endregion
     if (code !== 0 && !resultText) {
+      const stderrHint = _stderrBuf.trim().substring(0, 300);
+      let userMsg = `Claude CLI 异常退出 (code=${code})`;
+      if (stderrHint.includes("unknown option")) {
+        userMsg +=
+          "：CLI 版本不支持某些参数，请升级 claude: npm i -g @anthropic-ai/claude-code@latest";
+      } else if (
+        stderrHint.includes("needs an update") ||
+        stderrHint.includes("newer version")
+      ) {
+        userMsg +=
+          "：CLI 版本过低，请升级: npm i -g @anthropic-ai/claude-code@latest";
+      } else if (
+        stderrHint.includes("vertex") ||
+        stderrHint.includes("Vertex")
+      ) {
+        userMsg +=
+          "：检测到 Vertex AI 配置冲突，请检查环境变量 CLAUDE_CODE_USE_VERTEX";
+      } else if (stderrHint) {
+        userMsg += `\n详情: ${stderrHint}`;
+      } else {
+        userMsg += "，请确认已登录：运行 claude 命令";
+      }
       res.write(
-        `data: ${JSON.stringify({ type: "error", message: `claude CLI 退出 (code=${code}, signal=${signal})，请确认已登录：运行 claude 命令` })}\n\n`,
+        `data: ${JSON.stringify({ type: "error", message: userMsg })}\n\n`,
       );
     } else {
       res.write(
@@ -1145,31 +1165,10 @@ app.post("/chat", (req, res) => {
 
   res.on("close", () => {
     clearInterval(keepalive);
+    _activeChats = Math.max(0, _activeChats - 1);
     if (!responseDone && !child.killed) child.kill();
   });
 });
-
-// #region agent log
-app.post("/wps-debug-log", (req, res) => {
-  _dbg("wps-addon:" + (req.body.location || "unknown"), req.body.message || "wps log", req.body.data || {});
-  res.json({ ok: true });
-});
-
-app.get("/debug-status", (req, res) => {
-  const status = {
-    proxy: "running",
-    nodeVersion: process.version,
-    distExists: existsSync(distPath),
-    wpsAddonExists: existsSync(wpsAddonPath),
-    distFiles: existsSync(distPath) ? readdirSync(distPath) : [],
-    wpsAddonFiles: existsSync(wpsAddonPath) ? readdirSync(wpsAddonPath) : [],
-    uptime: process.uptime(),
-    pid: process.pid,
-  };
-  _dbg("proxy-server.js:debug-status", "Debug status requested", status);
-  res.json(status);
-});
-// #endregion
 
 if (existsSync(distPath)) {
   app.get("/{*path}", (req, res) => {
@@ -1178,9 +1177,6 @@ if (existsSync(distPath)) {
 }
 
 app.listen(PORT, "127.0.0.1", () => {
-  // #region agent log
-  _dbg("proxy-server.js:listen", "Server started", { port: PORT, distExists: existsSync(distPath), wpsAddonExists: existsSync(wpsAddonPath) });
-  // #endregion
   console.log(`\n✅ WPS Claude 代理服务器已启动`);
   console.log(`   地址: http://127.0.0.1:${PORT}`);
   console.log(`   健康检查: http://127.0.0.1:${PORT}/health`);
