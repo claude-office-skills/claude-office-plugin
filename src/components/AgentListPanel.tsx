@@ -146,6 +146,9 @@ function AgentListPanel({
                 <div className={styles.itemBottom}>
                   <span
                     className={styles.statusBadge}
+                    data-running={
+                      agent.status === "running" ? "true" : undefined
+                    }
                     style={{
                       backgroundColor: `${cfg.color}30`,
                       color: cfg.color,

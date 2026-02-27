@@ -57,10 +57,42 @@
   flex-shrink: 0;
 }
 
+.statusDot.pulsing {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+
 .tabLabel {
   max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.closeTab {
+  display: none;
+  width: 14px;
+  height: 14px;
+  font-size: 11px;
+  line-height: 14px;
+  text-align: center;
+  border-radius: 3px;
+  color: var(--text-tertiary, #666);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.tab:hover .closeTab {
+  display: inline-block;
+}
+
+.closeTab:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
 }
 
 .actions {

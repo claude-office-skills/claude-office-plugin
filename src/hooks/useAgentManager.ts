@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { nanoid } from "nanoid";
 import type {
   AgentState,
@@ -6,6 +6,9 @@ import type {
   ChatMessage,
   InteractionMode,
 } from "../types";
+
+const STORAGE_KEY = "wps-claude-agents-v2";
+const MAX_PERSISTED_AGENTS = 20;
 
 const WELCOME_MESSAGE: ChatMessage = {
   id: "welcome",
@@ -31,6 +34,39 @@ function createAgent(overrides?: Partial<AgentState>): AgentState {
     updatedAt: now,
     ...overrides,
   };
+}
+
+interface PersistedState {
+  agents: AgentState[];
+  activeAgentId: string;
+}
+
+function loadPersistedAgents(): PersistedState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as PersistedState;
+    if (!Array.isArray(data.agents) || data.agents.length === 0) return null;
+    const restored = data.agents.map((a) => ({
+      ...a,
+      status: (a.status === "running" ? "paused" : a.status) as AgentStatus,
+    }));
+    return { agents: restored, activeAgentId: data.activeAgentId };
+  } catch {
+    return null;
+  }
+}
+
+function persistAgents(agents: AgentState[], activeAgentId: string): void {
+  try {
+    const toSave = agents.slice(0, MAX_PERSISTED_AGENTS);
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ agents: toSave, activeAgentId }),
+    );
+  } catch {
+    // storage full — silently drop
+  }
 }
 
 export interface AgentManagerActions {
@@ -65,13 +101,33 @@ export interface AgentManagerState {
 }
 
 export function useAgentManager(): AgentManagerState & AgentManagerActions {
-  const [agents, setAgents] = useState<AgentState[]>(() => [createAgent()]);
-  const [activeAgentId, setActiveAgentId] = useState<string>(
-    () => agents[0]?.id ?? "",
-  );
+  const [agents, setAgents] = useState<AgentState[]>(() => {
+    const persisted = loadPersistedAgents();
+    return persisted ? persisted.agents : [createAgent()];
+  });
+  const [activeAgentId, setActiveAgentId] = useState<string>(() => {
+    const persisted = loadPersistedAgents();
+    return persisted?.activeAgentId ?? agents[0]?.id ?? "";
+  });
 
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
+
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      const hasStreaming = agents.some((a) =>
+        a.messages.some((m) => m.isStreaming),
+      );
+      if (!hasStreaming) {
+        persistAgents(agents, activeAgentId);
+      }
+    }, 500);
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    };
+  }, [agents, activeAgentId]);
 
   const activeAgent = agents.find((a) => a.id === activeAgentId) ?? agents[0];
 

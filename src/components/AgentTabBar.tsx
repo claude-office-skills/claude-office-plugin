@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect } from "react";
 import type { AgentState, AgentStatus } from "../types";
 import styles from "./AgentTabBar.module.css";
 
@@ -6,6 +6,7 @@ interface AgentTabBarProps {
   agents: AgentState[];
   activeAgentId: string;
   onSwitch: (agentId: string) => void;
+  onClose: (agentId: string) => void;
   onNew: () => void;
   onOpenList: () => void;
   visible: boolean;
@@ -30,40 +31,87 @@ function AgentTabBar({
   agents,
   activeAgentId,
   onSwitch,
+  onClose,
   onNew,
   onOpenList,
   visible,
 }: AgentTabBarProps) {
+  useEffect(() => {
+    if (!visible) return;
+    const handler = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod) return;
+
+      if (e.key === "t" && e.shiftKey) {
+        e.preventDefault();
+        onNew();
+        return;
+      }
+
+      if (e.key === "w") {
+        e.preventDefault();
+        onClose(activeAgentId);
+        return;
+      }
+
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const idx = agents.findIndex((a) => a.id === activeAgentId);
+        const next = e.shiftKey
+          ? (idx - 1 + agents.length) % agents.length
+          : (idx + 1) % agents.length;
+        onSwitch(agents[next].id);
+        return;
+      }
+
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= 9 && num <= agents.length) {
+        e.preventDefault();
+        onSwitch(agents[num - 1].id);
+      }
+    };
+
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [visible, agents, activeAgentId, onSwitch, onClose, onNew]);
+
   if (!visible) return null;
+
+  const visibleAgents = agents.slice(0, 8);
 
   return (
     <div className={styles.tabBar}>
       <div className={styles.tabs}>
-        {agents
-          .filter(
-            (a) =>
-              a.status !== "done" ||
-              a.id === activeAgentId ||
-              agents.indexOf(a) < 5,
-          )
-          .slice(0, 8)
-          .map((agent) => {
-            const isActive = agent.id === activeAgentId;
-            return (
-              <button
-                key={agent.id}
-                className={`${styles.tab} ${isActive ? styles.active : ""}`}
-                onClick={() => onSwitch(agent.id)}
-                title={agent.name || "新对话"}
-              >
+        {visibleAgents.map((agent) => {
+          const isActive = agent.id === activeAgentId;
+          const isRunning = agent.status === "running";
+          return (
+            <button
+              key={agent.id}
+              className={`${styles.tab} ${isActive ? styles.active : ""}`}
+              onClick={() => onSwitch(agent.id)}
+              title={agent.name || "新对话"}
+            >
+              <span
+                className={`${styles.statusDot} ${isRunning ? styles.pulsing : ""}`}
+                style={{ backgroundColor: STATUS_COLORS[agent.status] }}
+              />
+              <span className={styles.tabLabel}>{tabLabel(agent)}</span>
+              {agents.length > 1 && (
                 <span
-                  className={styles.statusDot}
-                  style={{ backgroundColor: STATUS_COLORS[agent.status] }}
-                />
-                <span className={styles.tabLabel}>{tabLabel(agent)}</span>
-              </button>
-            );
-          })}
+                  className={styles.closeTab}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose(agent.id);
+                  }}
+                  title="关闭"
+                >
+                  ×
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
       <div className={styles.actions}>
         <button
@@ -89,7 +137,11 @@ function AgentTabBar({
             <line x1="3" y1="18" x2="3.01" y2="18" />
           </svg>
         </button>
-        <button className={styles.newBtn} onClick={onNew} title="新建 Agent">
+        <button
+          className={styles.newBtn}
+          onClick={onNew}
+          title="新建 Agent (⌘⇧T)"
+        >
           <span>+</span>
         </button>
       </div>

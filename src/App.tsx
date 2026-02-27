@@ -287,7 +287,7 @@ export default function App() {
 
       for (const block of blocks) {
         try {
-          const { result, diff } = await executeCode(block.code);
+          const { result, diff } = await executeCode(block.code, activeAgentId);
           updateActiveMessages((prev) =>
             prev.map((m) => {
               if (m.id !== msgId) return m;
@@ -568,7 +568,10 @@ ${code}
               for (let _bi = 0; _bi < codeBlocks.length; _bi++) {
                 const block = codeBlocks[_bi];
                 try {
-                  const { result, diff } = await executeCode(block.code);
+                  const { result, diff } = await executeCode(
+                    block.code,
+                    activeAgentId,
+                  );
                   updateActiveMessages((prev) =>
                     prev.map((m) => {
                       if (m.id !== assistantMsgId) return m;
@@ -953,6 +956,7 @@ ${code}
         agents={agents}
         activeAgentId={activeAgentId}
         onSwitch={switchAgent}
+        onClose={removeAgent}
         onNew={handleNewChat}
         onOpenList={() => setAgentListOpen(true)}
         visible={showTabBar}

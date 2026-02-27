@@ -176,6 +176,15 @@
   flex-shrink: 0;
 }
 
+.statusBadge[data-running="true"] {
+  animation: badgePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .itemSummary {
   font-size: 10px;
   color: var(--text-tertiary, #777);

@@ -54,11 +54,14 @@ export interface ExecuteResult {
   diff: DiffResult | null;
 }
 
-export async function executeCode(code: string): Promise<ExecuteResult> {
+export async function executeCode(
+  code: string,
+  agentId?: string,
+): Promise<ExecuteResult> {
   const submitRes = await fetch(`${PROXY_URL}/execute-code`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, agentId }),
   });
 
   if (!submitRes.ok) {
