@@ -2496,8 +2496,13 @@ app.post("/chat", (req, res) => {
     if (timeCtx) fullPrompt += timeCtx + "\n";
   }
 
-  fullPrompt +=
-    buildSystemPrompt(allMatched, todayStr, lastUserMsg, modeSkill) + "\n";
+  // Haiku: 精简 prompt，只保留核心能力声明，跳过 skill sections
+  if (selectedModel === "haiku") {
+    fullPrompt += buildSystemPrompt([], todayStr, lastUserMsg, null) + "\n";
+  } else {
+    fullPrompt +=
+      buildSystemPrompt(allMatched, todayStr, lastUserMsg, modeSkill) + "\n";
+  }
 
   // v2.2.0: Record skill usage for preference learning
   if (APP_CONFIG.memory.enabled && allMatched.length > 0) {
@@ -2636,12 +2641,11 @@ app.post("/chat", (req, res) => {
     "--model",
     selectedModel,
   ];
-  if (currentMode === "plan") {
-    cliArgs.push("--effort", "medium");
-  } else if (currentMode === "team") {
+  if (selectedModel === "haiku") {
+    cliArgs.push("--effort", "min");
+  } else if (currentMode === "plan" || currentMode === "team") {
     cliArgs.push("--effort", "medium");
   } else {
-    // ask / agent: keep thinking fast
     cliArgs.push("--effort", "low");
   }
 
@@ -2676,6 +2680,18 @@ app.post("/chat", (req, res) => {
     if (process.env[key]) cleanEnv[key] = process.env[key];
   }
   const child = spawn(claudePath, cliArgs, { env: cleanEnv });
+
+  // CLI 超时保护：Haiku 60s, 其他模型 180s
+  const CLI_TIMEOUT_MS = selectedModel === "haiku" ? 60_000 : 180_000;
+  const cliTimer = setTimeout(() => {
+    if (!child.killed) {
+      console.log(`[chat] CLI timeout after ${CLI_TIMEOUT_MS}ms, killing process`);
+      child.kill("SIGTERM");
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ type: "result", subtype: "text", text: "\n\n⚠️ 响应超时，请重试或换用更快的模型。" })}\n\n`);
+      }
+    }
+  }, CLI_TIMEOUT_MS);
 
   const provenance = {
     mode: currentMode,
@@ -2850,6 +2866,7 @@ app.post("/chat", (req, res) => {
   });
 
   child.on("close", (code, signal) => {
+    clearTimeout(cliTimer);
     clearInterval(_idleTimer);
     const TOKEN_LIMIT_RE =
       /exceeded the \d+ output token maximum|output_token.*limit|max_tokens_exceeded/i;
@@ -2941,6 +2958,7 @@ app.post("/chat", (req, res) => {
   });
 
   res.on("close", () => {
+    clearTimeout(cliTimer);
     clearInterval(keepalive);
     clearInterval(_idleTimer);
     _activeChats = Math.max(0, _activeChats - 1);
