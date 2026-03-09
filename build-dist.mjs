@@ -103,6 +103,9 @@ log("Copying distribution files...");
 
 cpSync(join(__dirname, "dist"), join(OUT, "dist"), { recursive: true });
 cpSync(join(__dirname, "wps-addon"), join(OUT, "wps-addon"), { recursive: true });
+cpSync(join(__dirname, "lib"), join(OUT, "lib"), { recursive: true });
+cpSync(join(__dirname, "agents"), join(OUT, "agents"), { recursive: true });
+cpSync(join(__dirname, "hooks"), join(OUT, "hooks"), { recursive: true });
 cpSync(join(__dirname, "package.json"), join(OUT, "package.json"));
 cpSync(join(__dirname, ".env.example"), join(OUT, ".env.example"));
 
@@ -119,6 +122,21 @@ execSync(
   `--output "${join(OUT, "proxy-server.js")}"`,
   { stdio: "inherit" }
 );
+
+log("Minifying lib/**/*.js...");
+function minifyDir(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) { minifyDir(full); }
+    else if (entry.name.endsWith(".js")) {
+      execSync(
+        `npx terser "${full}" --module --compress passes=2,drop_console=false --mangle --output "${full}"`,
+        { stdio: "inherit" }
+      );
+    }
+  }
+}
+minifyDir(join(OUT, "lib"));
 
 log("Minifying wps-addon/main.js (preserve top-level names for WPS ribbon)...");
 execSync(
