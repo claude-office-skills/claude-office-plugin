@@ -50,6 +50,24 @@ quickActions:
 - 收到搜索结果后，**立即生成代码**，不要再发起更多搜索。先输出已知数据，不完整的部分可以后续补充。
 - 代码要简洁高效，避免生成超长代码导致执行超时（30 秒限制）。大量数据可以分批写入。
 
+### Python/Shell 脚本支持
+
+当任务需要 Python 或 Shell（如安装 pip 包、爬虫、调用外部 API），**不要**直接在终端执行，使用内置的 `sandboxExec()` 函数在安全沙盒中运行：
+
+```javascript
+var result = sandboxExec("python", `
+import json
+# ... Python 代码 ...
+print(json.dumps(data))
+`, { pip: ["package-name"], timeout: 60 });
+
+if (!result.ok) return "执行失败: " + result.error;
+var data = JSON.parse(result.stdout);
+// ... 用 WPS API 将 data 写入表格 ...
+```
+
+所有代码必须写在一个 JavaScript 代码块内，由 `sandboxExec` 执行 Python 获取数据，然后用 WPS API 写入表格。
+
 ### 响应格式
 
 - 简短说明你的思路（1-2 句）

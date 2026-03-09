@@ -654,6 +654,45 @@ function dataBridgeList() {
   }
 }
 
+function dataBridgeSetCredentials(connectorId, credentials) {
+  var body = JSON.stringify({ credentials: credentials });
+  var resp = httpPost(PROXY_URL + "/data-bridge/connectors/" + connectorId + "/credentials", body);
+  if (!resp) return { ok: false, error: "网络请求失败" };
+  try { return JSON.parse(resp); } catch (e) { return { ok: false, error: "响应解析失败" }; }
+}
+
+function dataBridgeCreateConnector(definition) {
+  var body = JSON.stringify(definition);
+  var resp = httpPost(PROXY_URL + "/data-bridge/connectors/create", body);
+  if (!resp) return { ok: false, error: "网络请求失败" };
+  try { return JSON.parse(resp); } catch (e) { return { ok: false, error: "响应解析失败" }; }
+}
+
+function dataBridgeCredentialStatus(connectorId) {
+  var resp = httpGet(PROXY_URL + "/data-bridge/connectors/" + connectorId + "/credential-status");
+  if (!resp) return { configured: false };
+  try { return JSON.parse(resp); } catch (e) { return { configured: false }; }
+}
+
+function dataBridgeToggle(connectorId, enabled) {
+  var body = JSON.stringify({ enabled: enabled });
+  var resp = httpPost(PROXY_URL + "/data-bridge/connectors/" + connectorId + "/toggle", body);
+  if (!resp) return { ok: false };
+  try { return JSON.parse(resp); } catch (e) { return { ok: false }; }
+}
+
+function sandboxExec(language, code, options) {
+  var body = JSON.stringify({
+    language: language,
+    code: code,
+    pip: (options && options.pip) || [],
+    timeout: (options && options.timeout) || 60
+  });
+  var resp = httpPost(PROXY_URL + "/sandbox/execute", body);
+  if (!resp) return { ok: false, error: "沙盒服务无响应" };
+  try { return JSON.parse(resp); } catch (e) { return { ok: false, error: "响应解析失败" }; }
+}
+
 // ── 预注册函数表 — AI 可直接调用，避免生成完整代码 ──────
 var actionRegistry = {
   fillColor: function (range, bgrColor) {
@@ -759,7 +798,12 @@ function executeInWps(code) {
       "return null;}\n";
     var bridgeInject =
       "var dataBridgePull=" + dataBridgePull.toString() + ";\n" +
-      "var dataBridgeList=" + dataBridgeList.toString() + ";\n";
+      "var dataBridgeList=" + dataBridgeList.toString() + ";\n" +
+      "var dataBridgeSetCredentials=" + dataBridgeSetCredentials.toString() + ";\n" +
+      "var dataBridgeCreateConnector=" + dataBridgeCreateConnector.toString() + ";\n" +
+      "var dataBridgeCredentialStatus=" + dataBridgeCredentialStatus.toString() + ";\n" +
+      "var dataBridgeToggle=" + dataBridgeToggle.toString() + ";\n" +
+      "var sandboxExec=" + sandboxExec.toString() + ";\n";
     var wrappedCode = safeSheetGet + bridgeInject + code;
     var fn = new Function(wrappedCode);
     var result = fn();

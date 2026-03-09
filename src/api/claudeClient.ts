@@ -117,29 +117,6 @@ function processSseLines(
     if (!data) continue;
     try {
       const event = JSON.parse(data);
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "claudeClient.ts:processSseLines",
-            message: `SSE parsed: ${event.type}`,
-            data: {
-              type: event.type,
-              textLen: event.text?.length || 0,
-              fullTextLen: fullTextRef.v.length,
-            },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       if (event.type === "agent_info") {
         callbacks.onAgentInfo?.({
           name: event.agent,
@@ -178,29 +155,6 @@ function processSseLines(
       } else if (event.type === "plan_created") {
         callbacks.onPlanCreated?.(event.steps, event.originalTask);
       } else if (event.type === "error") {
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Debug-Session-Id": "eab716",
-            },
-            body: JSON.stringify({
-              sessionId: "eab716",
-              location: "claudeClient.ts:SSE-error-detail",
-              message: "SSE error event detail",
-              data: {
-                errorMessage: event.message,
-                fullTextLen: fullTextRef.v.length,
-                eventKeys: Object.keys(event),
-              },
-              timestamp: Date.now(),
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
         throw new Error(event.message);
       }
     } catch (parseErr) {
@@ -310,30 +264,6 @@ export async function sendMessage(
     };
 
     xhr.onload = () => {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "claudeClient.ts:onload",
-            message: "XHR onload",
-            data: {
-              status: xhr.status,
-              aborted,
-              fullTextLen: fullTextRef.v.length,
-              responseLen: xhr.responseText?.length || 0,
-            },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       if (aborted) return;
       if (xhr.status !== 200) {
         callbacks.onError(
@@ -366,25 +296,6 @@ export async function sendMessage(
     };
 
     xhr.onerror = () => {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "claudeClient.ts:onerror",
-            message: "XHR onerror",
-            data: { aborted, fullTextLen: fullTextRef.v.length },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       if (aborted) {
         if (fullTextRef.v) {
           callbacks.onComplete(fullTextRef.v, provenanceRef.v);

@@ -265,12 +265,6 @@ function MessageBubble({
   const isStreamingContent = !!message.isStreaming && !!message.content;
   const isDone = !message.isStreaming;
 
-  // #region agent log
-  if (message.isStreaming) {
-    fetch('http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f532b6'},body:JSON.stringify({sessionId:'f532b6',location:'MessageBubble.tsx:render',message:'streaming msg render',hypothesisId:'B',data:{msgId:message.id,isThinking,hasThinkingContent:!!message.thinkingContent,thinkingLen:message.thinkingContent?.length??0,hasContent:!!message.content,contentLen:message.content?.length??0},timestamp:Date.now()})}).catch(()=>{});
-  }
-  // #endregion
-
   return (
     <div className={styles.msgRow}>
       <div className={styles.assistBubble}>

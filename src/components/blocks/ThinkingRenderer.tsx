@@ -53,31 +53,6 @@ function ThinkingRenderer({
     }
   }, [thinkingContent, isThinking, expanded]);
 
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "34f850",
-    },
-    body: JSON.stringify({
-      sessionId: "34f850",
-      location: "ThinkingRenderer.tsx:render",
-      message: "ThinkingRenderer render decision",
-      data: {
-        isThinking,
-        thinkingMs,
-        hasContent: !!thinkingContent,
-        contentLen: thinkingContent?.length || 0,
-        willHide_noMs: !thinkingMs || thinkingMs < 1000,
-        willHide_noContent: !thinkingContent && !isThinking,
-      },
-      timestamp: Date.now(),
-      hypothesisId: "H-THINK",
-    }),
-  }).catch(() => {});
-  // #endregion
-
   if (isThinking) {
     const charCount = thinkingContent?.length || 0;
     const badge =

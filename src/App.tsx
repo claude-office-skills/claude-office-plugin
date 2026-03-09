@@ -501,55 +501,7 @@ export default function App() {
         }),
       );
 
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "App.tsx:handleCodeExecuted",
-            message: "code executed callback",
-            data: {
-              msgId,
-              blockId,
-              lang,
-              isManualLang,
-              hasError: !!error,
-              hasResult: !!result,
-              resultLen: result?.length,
-              currentMode,
-            },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
-
       if (!error && result && isManualLang && currentMode === "agent") {
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Debug-Session-Id": "eab716",
-            },
-            body: JSON.stringify({
-              sessionId: "eab716",
-              location: "App.tsx:handleCodeExecuted:autoContinue",
-              message: "triggering auto-continue for manual lang",
-              data: { lang, currentMode, resultPreview: result?.slice(0, 200) },
-              timestamp: Date.now(),
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
         setTimeout(async () => {
           const originalUserMsg =
             messagesRef.current.find(
@@ -572,28 +524,6 @@ export default function App() {
             `- 包含表头和格式化（列宽、对齐等）\n` +
             `- 使用 Application.ActiveWorkbook 和合适的 Sheet\n` +
             `- 如果数据量大，分批写入避免超时`;
-          // #region agent log
-          fetch(
-            "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Debug-Session-Id": "eab716",
-              },
-              body: JSON.stringify({
-                sessionId: "eab716",
-                location: "App.tsx:handleCodeExecuted:sendingPrompt",
-                message: "sending auto-continue prompt",
-                data: {
-                  promptLen: promptText.length,
-                  displayText: displayText.slice(0, 100),
-                },
-                timestamp: Date.now(),
-              }),
-            },
-          ).catch(() => {});
-          // #endregion
           handleSendRef.current(promptText, true, displayText);
         }, 100);
       }
@@ -838,39 +768,6 @@ ${code}
 
   const handleSwitchAgent = useCallback(
     (targetId: string) => {
-      // #region agent log
-      const streamingAgent = agents.find((a) =>
-        a.messages.some((m) => m.isStreaming),
-      );
-      if (streamingAgent) {
-        const streamingMsg = streamingAgent.messages.find((m) => m.isStreaming);
-        fetch(
-          "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Debug-Session-Id": "f532b6",
-            },
-            body: JSON.stringify({
-              sessionId: "f532b6",
-              location: "App.tsx:handleSwitchAgent",
-              message: "switching during stream",
-              hypothesisId: "B",
-              data: {
-                fromAgentId: activeAgentId,
-                toAgentId: targetId,
-                streamingAgentId: streamingAgent.id,
-                hasThinkingContent: !!streamingMsg?.thinkingContent,
-                thinkingLen: streamingMsg?.thinkingContent?.length ?? 0,
-                isStreaming: streamingMsg?.isStreaming,
-              },
-              timestamp: Date.now(),
-            }),
-          },
-        ).catch(() => {});
-      }
-      // #endregion
       switchAgent(targetId);
     },
     [agents, activeAgentId, switchAgent],
@@ -1292,31 +1189,6 @@ ${code}
           onThinking: (text) => {
             if (aborted) return;
             thinkingText += text;
-            // #region agent log
-            fetch(
-              "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "34f850",
-                },
-                body: JSON.stringify({
-                  sessionId: "34f850",
-                  location: "App.tsx:onThinking",
-                  message: "onThinking callback fired",
-                  data: {
-                    chunkLen: text.length,
-                    totalLen: thinkingText.length,
-                    agentId,
-                    msgId: assistantMsgId,
-                  },
-                  timestamp: Date.now(),
-                  hypothesisId: "H-THINK",
-                }),
-              },
-            ).catch(() => {});
-            // #endregion
             updateAgentMessages(agentId, (prev) =>
               prev.map((m) =>
                 m.id === assistantMsgId
@@ -1326,27 +1198,6 @@ ${code}
             );
           },
           onToken: (token) => {
-            // #region agent log
-            if (!firstTokenReceived) {
-              fetch(
-                "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "X-Debug-Session-Id": "eab716",
-                  },
-                  body: JSON.stringify({
-                    sessionId: "eab716",
-                    location: "App.tsx:onToken",
-                    message: "First token received",
-                    data: { tokenLen: token.length, aborted },
-                    timestamp: Date.now(),
-                  }),
-                },
-              ).catch(() => {});
-            }
-            // #endregion
             if (aborted) return;
             fullText += token;
             const updates: Partial<ChatMessage> = { content: fullText };
@@ -1396,29 +1247,6 @@ ${code}
             );
           },
           onComplete: async (text, provenance, flags) => {
-            // #region agent log
-            fetch(
-              "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "eab716",
-                },
-                body: JSON.stringify({
-                  sessionId: "eab716",
-                  location: "App.tsx:onComplete",
-                  message: "onComplete called",
-                  data: {
-                    textLen: text?.length || 0,
-                    aborted,
-                    hasProvenance: !!provenance,
-                  },
-                  timestamp: Date.now(),
-                }),
-              },
-            ).catch(() => {});
-            // #endregion
             if (aborted) return;
             const tokenLimitHit = flags?.tokenLimitHit ?? false;
             const prov = provenance
@@ -1544,49 +1372,7 @@ ${code}
                   try {
                     execResult = await executeCode(block.code, agentId);
                   } catch (firstErr) {
-                    // #region agent log
-                    fetch(
-                      "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                      {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          "X-Debug-Session-Id": "f532b6",
-                        },
-                        body: JSON.stringify({
-                          sessionId: "f532b6",
-                          location: "App.tsx:catch-first",
-                          message: "caught error from executeCode",
-                          data: {
-                            errName: (firstErr as Error)?.name,
-                            errMsg: (firstErr as Error)?.message,
-                            isBlockedError: firstErr instanceof BlockedError,
-                          },
-                          timestamp: Date.now(),
-                        }),
-                      },
-                    ).catch(() => {});
-                    // #endregion
                     if (firstErr instanceof BlockedError) {
-                      // #region agent log
-                      fetch(
-                        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                        {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "X-Debug-Session-Id": "f532b6",
-                          },
-                          body: JSON.stringify({
-                            sessionId: "f532b6",
-                            location: "App.tsx:retry-force",
-                            message: "Retrying with force=true",
-                            data: { agentId },
-                            timestamp: Date.now(),
-                          }),
-                        },
-                      ).catch(() => {});
-                      // #endregion
                       execResult = await executeCode(block.code, agentId, true);
                     } else {
                       throw firstErr;
@@ -1613,29 +1399,6 @@ ${code}
                 } catch (err) {
                   const errorMsg =
                     err instanceof Error ? err.message : String(err);
-                  // #region agent log
-                  fetch(
-                    "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                    {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        "X-Debug-Session-Id": "eab716",
-                      },
-                      body: JSON.stringify({
-                        sessionId: "eab716",
-                        location: "App.tsx:autoExec:error",
-                        message: "Auto-exec JS failed",
-                        data: {
-                          errorMsg,
-                          blockLang: block.language,
-                          codeHead: block.code?.substring(0, 120),
-                        },
-                        timestamp: Date.now(),
-                      }),
-                    },
-                  ).catch(() => {});
-                  // #endregion
                   execResults.push(`[ERR] 执行失败: ${errorMsg}`);
                   execFailed = true;
                   updateAgentMessages(agentId, (prev) =>
@@ -1704,29 +1467,6 @@ ${code}
                       ?.replace("[ERR] 执行失败: ", "") || "未知错误";
                   const codeSnippet =
                     failedBlock?.code?.substring(0, 600) || "";
-                  // #region agent log
-                  fetch(
-                    "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                    {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        "X-Debug-Session-Id": "eab716",
-                      },
-                      body: JSON.stringify({
-                        sessionId: "eab716",
-                        location: "App.tsx:autoRetry",
-                        message: "Auto-retrying after exec failure",
-                        data: {
-                          retryRound,
-                          failedError,
-                          codeLen: codeSnippet.length,
-                        },
-                        timestamp: Date.now(),
-                      }),
-                    },
-                  ).catch(() => {});
-                  // #endregion
                   const retryPrompt =
                     `代码执行出错（自动重试 ${retryRound}/${MAX_AUTO_RETRY}），请修复并重新生成完整代码。\n\n` +
                     `**错误信息：**\n\`\`\`\n${failedError}\n\`\`\`\n\n` +
@@ -1830,25 +1570,6 @@ ${code}
           },
           onError: (err) => {
             const raw = err.message || String(err);
-            // #region agent log
-            fetch(
-              "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "abaffc",
-                },
-                body: JSON.stringify({
-                  sessionId: "abaffc",
-                  location: "App.tsx:onError",
-                  message: "SSE onError triggered",
-                  data: { raw, friendlyMsg: friendlyErrorMessage(raw) },
-                  timestamp: Date.now(),
-                }),
-              },
-            ).catch(() => {});
-            // #endregion
             const isProxyError =
               raw.includes("fetch") ||
               raw.includes("Failed") ||
@@ -1930,29 +1651,6 @@ ${code}
         unexpectedErr instanceof Error
           ? unexpectedErr.stack?.substring(0, 300)
           : "";
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "abaffc",
-          },
-          body: JSON.stringify({
-            sessionId: "abaffc",
-            location: "App.tsx:unexpectedErr",
-            message: "Unexpected error in handleSend",
-            data: {
-              errMsg,
-              errStack,
-              friendlyMsg: friendlyErrorMessage(errMsg),
-            },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       const isProxyError =
         errMsg.includes("fetch") ||
         errMsg.includes("Failed") ||

@@ -69,31 +69,6 @@ function CodeRenderer({
     try {
       const lang = (block.language || "javascript").toLowerCase();
       const isShell = ["bash", "shell", "sh", "zsh", "terminal"].includes(lang);
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "CodeRenderer.tsx:runCode:start",
-            message: "Starting code execution",
-            data: {
-              lang,
-              isShell,
-              force,
-              codeLen: block.code.length,
-              codeHead: block.code.substring(0, 100),
-            },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       let execResult: { result: string; diff?: DiffResult | null };
       if (lang === "python" || lang === "py") {
         execResult = await executePython(block.code);
@@ -104,30 +79,6 @@ function CodeRenderer({
       } else {
         execResult = await executeCode(block.code, undefined, force);
       }
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "CodeRenderer.tsx:runCode:success",
-            message: "Code execution succeeded",
-            data: {
-              lang,
-              resultLen: execResult.result?.length,
-              resultHead: execResult.result?.substring(0, 100),
-              hasDiff: !!execResult.diff,
-            },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       onExecuted(block.id, execResult.result, undefined, execResult.diff);
     } catch (err) {
       if (err instanceof BlockedError) {
@@ -135,25 +86,6 @@ function CodeRenderer({
         return;
       }
       const errMsg = err instanceof Error ? err.message : String(err);
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "CodeRenderer.tsx:runCode:error",
-            message: "Code execution failed",
-            data: { lang, errMsg, codeHead: block.code.substring(0, 100) },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       onExecuted(block.id, "", errMsg);
     } finally {
       setRunning(false);

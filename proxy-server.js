@@ -83,6 +83,7 @@ import { runHooks } from "./lib/hook-engine.js";
 import { startTeam, getTeamStatus } from "./lib/agent-team.js";
 import connectorRegistry from "./lib/connector-registry.js";
 import { importCredentials, importSingleFile } from "./lib/credential-importer.js";
+import { executePython, executeShell } from "./lib/sandbox-executor.js";
 
 // Initialize v2.2.0 subsystems on startup
 ensureMemoryDirs();
@@ -636,30 +637,6 @@ function estimatePromptTier(userMessage, messages) {
   _logTier(msg, "standard", "DEFAULT");
   return "standard";
 }
-// #region agent log
-const _fs34f850 = require("fs");
-const _logPath34f850 = "/Users/kingsoft/需求讨论/.cursor/debug-34f850.log";
-function _logTier(msg, tier, reason) {
-  try {
-    _fs34f850.appendFileSync(
-      _logPath34f850,
-      JSON.stringify({
-        sessionId: "34f850",
-        location: "proxy-server.js:estimatePromptTier",
-        message: "tier-classification",
-        data: {
-          userMsg: msg.substring(0, 80),
-          tier,
-          reason,
-          msgLen: msg.length,
-        },
-        timestamp: Date.now(),
-        hypothesisId: "H-TIER",
-      }) + "\n",
-    );
-  } catch (e) {}
-}
-// #endregion
 
 function buildSystemPrompt(skills, todayStr, userMessage, modeSkill, messages) {
   const tier = estimatePromptTier(userMessage, messages || []);
@@ -708,27 +685,6 @@ function buildSystemPrompt(skills, todayStr, userMessage, modeSkill, messages) {
   console.log(
     `[prompt] tier=${tier}, skills=${skills.length}, chars=${prompt.length}`,
   );
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "eab716",
-    },
-    body: JSON.stringify({
-      sessionId: "eab716",
-      location: "proxy-server.js:buildSystemPrompt",
-      message: "Skills loaded for prompt",
-      data: {
-        tier,
-        skillCount: skills.length,
-        skillNames: skills.map((s) => s.name),
-        promptChars: prompt.length,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   return prompt;
 }
 
@@ -1345,6 +1301,28 @@ app.delete("/data-bridge/connectors/:id", async (req, res) => {
   const result = await connectorRegistry.removeUserConnector(req.params.id);
   if (!result.ok) return res.status(400).json(result);
   res.json(result);
+});
+
+// ── Sandbox Execution API（安全沙盒脚本执行）──────────────────
+app.post("/sandbox/execute", async (req, res) => {
+  const { language, code, pip, timeout } = req.body || {};
+  if (!language || !code) {
+    return res.status(400).json({ ok: false, error: "缺少 language 或 code" });
+  }
+  const timeoutMs = Math.min((timeout || 60) * 1000, 120_000);
+  try {
+    let result;
+    if (language === "python") {
+      result = await executePython(code, { pip: pip || [], timeout: timeoutMs });
+    } else if (language === "shell" || language === "bash") {
+      result = await executeShell(code, { timeout: timeoutMs });
+    } else {
+      return res.status(400).json({ ok: false, error: `不支持的语言: ${language}` });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: `沙盒执行异常: ${err.message}` });
+  }
 });
 
 // ── Skills 列表 API（调试用）─────────────────────────────────
@@ -2111,27 +2089,6 @@ app.post("/execute-code", async (req, res) => {
   const { code, agentId, force } = req.body;
   if (!code) return res.status(400).json({ error: "code 不能为空" });
 
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "f532b6",
-    },
-    body: JSON.stringify({
-      sessionId: "f532b6",
-      location: "proxy-server.js:execute-code",
-      message: "Code execution request",
-      data: {
-        force: !!force,
-        codeLen: code.length,
-        codeSnippet: code.substring(0, 80),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   // v3.2: PreCodeExecute Hook — 危险操作拦截（force=true 时用户已确认，跳过）
   if (!force) {
     const preHook = runHooks("PreCodeExecute", {
@@ -2140,25 +2097,6 @@ app.post("/execute-code", async (req, res) => {
     });
     if (preHook.blocked) {
       console.log(`[hook] PreCodeExecute BLOCKED: ${preHook.reason}`);
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "f532b6",
-          },
-          body: JSON.stringify({
-            sessionId: "f532b6",
-            location: "proxy-server.js:execute-code-blocked",
-            message: "Code blocked by hook",
-            data: { reason: preHook.reason },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       return res.json({ blocked: true, reason: preHook.reason });
     }
     if (preHook.logs.length > 0) {
@@ -2267,26 +2205,6 @@ app.post("/execute-code", async (req, res) => {
   }
 
   const parentId = `exec-${++_codeIdCounter}-${Date.now()}`;
-  // #region agent log
-  try {
-    _fs34f850.appendFileSync(
-      _logPath34f850,
-      JSON.stringify({
-        sessionId: "34f850",
-        location: "proxy-server.js:execute-code-js",
-        message: "JS code queued for WPS",
-        data: {
-          parentId,
-          codeLen: code.length,
-          codeFirst200: code.substring(0, 200),
-          codeLast100: code.substring(Math.max(0, code.length - 100)),
-        },
-        timestamp: Date.now(),
-        hypothesisId: "H-TRANSLATE",
-      }) + "\n",
-    );
-  } catch (e) {}
-  // #endregion
 
   let cleanCode = code.replace(/\/\/\s*---ROW---/g, "");
 
@@ -2372,28 +2290,6 @@ app.post("/execute-code", async (req, res) => {
   if (/\.Value2?\s*=/.test(cleanCode) && !/function _n/.test(cleanCode)) {
     cleanCode = nanGuard + cleanCode;
   }
-
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "eab716",
-    },
-    body: JSON.stringify({
-      sessionId: "eab716",
-      location: "proxy-server.js:queue-push",
-      message: "Pushing JS code to queue",
-      data: {
-        parentId,
-        codeLen: cleanCode.length,
-        codeHead: cleanCode.substring(0, 120),
-        queueLen: _codeQueue.length,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   _codeQueue.push({
     id: parentId,
     code: cleanCode,
@@ -2413,30 +2309,6 @@ app.get("/pending-code", (req, res) => {
 
 app.post("/code-result", (req, res) => {
   const { id, result, error, diff } = req.body;
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "eab716",
-    },
-    body: JSON.stringify({
-      sessionId: "eab716",
-      location: "proxy-server.js:code-result-received",
-      message: "WPS sent code result",
-      data: {
-        id,
-        hasResult: !!result,
-        resultLen: result?.length,
-        hasError: !!error,
-        errorMsg: error?.substring?.(0, 200),
-        hasDiff: !!diff,
-        diffChanges: diff?.changeCount,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   if (!id) return res.status(400).json({ error: "id 不能为空" });
 
   const chunkMatch = id.match(/^(.+)_chunk_\d+$/);
@@ -2690,10 +2562,23 @@ const _sessionAgentMap = new Map();
 let _lastChatTime = 0;
 const CHAT_MIN_INTERVAL_MS = 300;
 
+// ── Credential masking for logs/memory ──────────────────────
+const _CREDENTIAL_RE =
+  /(?:api[_-]?key|auth[_-]?token|token|secret|password|bearer|credential|密钥|密码|凭证)\s*[:=：]\s*["']?([A-Za-z0-9_\-./+=]{8,})["']?/gi;
+const _RAW_TOKEN_RE =
+  /\b(sk[-_][A-Za-z0-9]{16,}|key[-_][A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{36,}|xox[bpras]-[A-Za-z0-9\-]{10,})\b/g;
+
+function _maskCredentials(text) {
+  if (!text) return text;
+  return text
+    .replace(_CREDENTIAL_RE, (m, val) => m.replace(val, val.substring(0, 3) + "***"))
+    .replace(_RAW_TOKEN_RE, (m) => m.substring(0, 6) + "***");
+}
+
 // ── v2.2.0: Post-conversation memory extraction ──────────────
 async function _extractAndStoreMemory(userMsg, assistantResponse) {
   try {
-    const combined = `用户: ${userMsg}\n助手: ${assistantResponse.substring(0, 2000)}`;
+    const combined = `用户: ${_maskCredentials(userMsg)}\n助手: ${_maskCredentials(assistantResponse.substring(0, 2000))}`;
 
     const factPatterns = [
       {
@@ -2979,57 +2864,6 @@ app.post("/chat", async (req, res) => {
   //    Bypasses CLI cold start (~15s) for simple queries.
   //    Falls back to CLI on any error. Disable with USE_DIRECT_API=false.
   //    Note: Step execution stays on CLI (model needs prompt caching for 30K+ prompts).
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "abaffc",
-    },
-    body: JSON.stringify({
-      sessionId: "abaffc",
-      location: "proxy-server.js:route-decision",
-      message: "Direct API routing check",
-      data: {
-        promptTier,
-        USE_DIRECT_API,
-        directApiReady: directApi.isReady(),
-        currentMode,
-        willUseDirectApi:
-          promptTier === "light" &&
-          USE_DIRECT_API &&
-          directApi.isReady() &&
-          currentMode !== "team",
-        lastUserMsgPrefix: (lastUserMsg || "").substring(0, 80),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/654d9aa3-fbba-48f2-b4ce-e7b9fc0ed511", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "abaffc",
-    },
-    body: JSON.stringify({
-      sessionId: "abaffc",
-      location: "proxy-server.js:route-decision-abaffc",
-      message: "Route decision for this request",
-      data: {
-        promptTier,
-        currentMode,
-        webSearch: !!webSearch,
-        model: model || "default",
-        hasStepMarker: /请执行以下步骤（仅这一步）/.test(lastUserMsg || ""),
-        lastUserMsgPrefix: (lastUserMsg || "").substring(0, 120),
-      },
-      timestamp: Date.now(),
-      hypothesisId: "H1-stepExec-regex",
-    }),
-  }).catch(() => {});
-  // #endregion
   if (
     promptTier === "light" &&
     USE_DIRECT_API &&
@@ -3108,29 +2942,6 @@ app.post("/chat", async (req, res) => {
     const abortController = new AbortController();
     const apiTimeout = setTimeout(() => abortController.abort(), 10_000);
 
-    // #region agent log
-    fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "abaffc",
-      },
-      body: JSON.stringify({
-        sessionId: "abaffc",
-        location: "proxy-server.js:direct-api-start",
-        message: "Starting Direct API for light tier",
-        data: {
-          model: selectedModel,
-          systemPromptLen: apiSystemPrompt.length,
-          msgCount: apiMessages.length,
-          timeoutMs: 10000,
-        },
-        timestamp: Date.now(),
-        hypothesisId: "H1",
-      }),
-    }).catch(() => {});
-    // #endregion
-
     try {
       const keepaliveApi = setInterval(() => {
         if (!res.writableEnded) res.write(`: keepalive ${Date.now()}\n\n`);
@@ -3144,31 +2955,6 @@ app.post("/chat", async (req, res) => {
         signal: abortController.signal,
         onEvent: (evt) => {
           if (res.writableEnded) return;
-          // #region agent log
-          if (evt.type === "token" || evt.type === "thinking") {
-            fetch(
-              "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "abaffc",
-                },
-                body: JSON.stringify({
-                  sessionId: "abaffc",
-                  location: "proxy-server.js:onEvent-directApi",
-                  message: `Direct API SSE: ${evt.type}`,
-                  data: {
-                    type: evt.type,
-                    textLen: evt.text?.length || 0,
-                    elapsedMs: Date.now() - apiStartTime,
-                  },
-                  timestamp: Date.now(),
-                }),
-              },
-            ).catch(() => {});
-          }
-          // #endregion
           res.write(`data: ${JSON.stringify(evt)}\n\n`);
         },
       });
@@ -3179,31 +2965,6 @@ app.post("/chat", async (req, res) => {
       console.log(
         `[direct-api] ✅ ${selectedModel} totalMs=${result.totalMs} ttFirst=${result.ttFirstToken} chars=${result.resultText.length} thinkingChars=${result.thinkingText?.length ?? 0}`,
       );
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "abaffc",
-          },
-          body: JSON.stringify({
-            sessionId: "abaffc",
-            location: "proxy-server.js:direct-api-done",
-            message: "Direct API done",
-            data: {
-              resultTextLen: result.resultText.length,
-              thinkingTextLen: result.thinkingText?.length ?? 0,
-              totalMs: result.totalMs,
-              ttFirstToken: result.ttFirstToken,
-              model: selectedModel,
-            },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
 
       if (!res.writableEnded) {
         const doneEvt = {
@@ -3228,32 +2989,6 @@ app.post("/chat", async (req, res) => {
       console.warn(
         `[direct-api] ⚠️ Falling back to CLI: ${apiErr.message} (${fallbackMs}ms)`,
       );
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "abaffc",
-          },
-          body: JSON.stringify({
-            sessionId: "abaffc",
-            location: "proxy-server.js:direct-api-fallback",
-            message: "Direct API failed, falling back to CLI",
-            data: {
-              errMsg: apiErr.message,
-              errName: apiErr.name,
-              fallbackMs,
-              model: selectedModel,
-              promptTier,
-            },
-            timestamp: Date.now(),
-            hypothesisId: "H1",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
     }
   }
 
@@ -3312,35 +3047,6 @@ app.post("/chat", async (req, res) => {
       }
     }
   }
-
-  // #region agent log - console fallback
-  console.log(
-    `[route] isStepExec=${isStepExecution} isPlanFirst=${isPlanFirstCandidate} tier=${promptTier} msg="${(lastUserMsg || "").substring(0, 80).replace(/\n/g, "↵")}"`,
-  );
-  // #endregion
-  // #region agent log
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "eab716",
-    },
-    body: JSON.stringify({
-      sessionId: "eab716",
-      location: "proxy-server.js:route-decision",
-      message: "Routing decision",
-      data: {
-        isStepExecution,
-        isPlanFirstCandidate,
-        kwPlanMatch,
-        promptTier,
-        directApiReady: USE_DIRECT_API && directApi.isReady(),
-        msgSnippet: (lastUserMsg || "").substring(0, 60),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 
   if (isPlanFirstCandidate) {
     const apiStartPlan = Date.now();
@@ -3417,30 +3123,6 @@ app.post("/chat", async (req, res) => {
           `[plan-first] ✅ Generated ${planSteps.length} steps in ${Date.now() - apiStartPlan}ms`,
         );
 
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Debug-Session-Id": "eab716",
-            },
-            body: JSON.stringify({
-              sessionId: "eab716",
-              location: "proxy-server.js:plan-first-success",
-              message: "Plan generated successfully",
-              data: {
-                stepCount: planSteps.length,
-                planText: planText.substring(0, 200),
-                elapsedMs: Date.now() - apiStartPlan,
-              },
-              timestamp: Date.now(),
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-
         const planSummary = planSteps
           .map((s) => `${s.index}. ${s.text}`)
           .join("\n");
@@ -3479,25 +3161,6 @@ app.post("/chat", async (req, res) => {
       console.warn(
         `[plan-first] ⚠️ Plan generation failed: ${planErr.name}:${planErr.message} (elapsed:${Date.now() - apiStartPlan}ms), continuing with CLI`,
       );
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "eab716",
-          },
-          body: JSON.stringify({
-            sessionId: "eab716",
-            location: "proxy-server.js:plan-first-fail",
-            message: "Plan generation failed",
-            data: { error: planErr.message },
-            timestamp: Date.now(),
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
     }
   }
 
@@ -3509,30 +3172,6 @@ app.post("/chat", async (req, res) => {
     console.log(
       `[step-exec] Using Direct API for streaming thinking (step execution)`,
     );
-    // #region agent log
-    fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "abaffc",
-      },
-      body: JSON.stringify({
-        sessionId: "abaffc",
-        location: "proxy-server.js:step-exec-direct-api",
-        message: "Step execution via Direct API",
-        data: {
-          promptTier,
-          model: selectedModel,
-          systemPromptLen: systemOnlyPrompt.length,
-          msgCount: messages.length,
-          lastMsgLen: (lastUserMsg || "").length,
-          lastMsgHead: (lastUserMsg || "").substring(0, 120),
-        },
-        timestamp: apiStepStart,
-        hypothesisId: "DirectAPI",
-      }),
-    }).catch(() => {});
-    // #endregion
     try {
       let stepResultText = "";
       const stepAbort = new AbortController();
@@ -3541,26 +3180,6 @@ app.post("/chat", async (req, res) => {
       const keepaliveApi = setInterval(() => {
         if (!res.writableEnded) res.write(`: keepalive ${Date.now()}\n\n`);
       }, 5000);
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "abaffc",
-          },
-          body: JSON.stringify({
-            sessionId: "abaffc",
-            location: "proxy-server.js:step-exec-timeout-config",
-            message: "Step timeout configured",
-            data: { promptTier, stepTimeoutMs, model: selectedModel },
-            timestamp: Date.now(),
-            hypothesisId: "H-timeout",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
 
       let _apiFirstThinkMs = 0;
       let _apiFirstTokenMs = 0;
@@ -3579,29 +3198,6 @@ app.post("/chat", async (req, res) => {
           if (evt.type === "thinking") {
             if (!_apiFirstThinkMs) {
               _apiFirstThinkMs = Date.now() - apiStepStart;
-              // #region agent log
-              fetch(
-                "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "X-Debug-Session-Id": "abaffc",
-                  },
-                  body: JSON.stringify({
-                    sessionId: "abaffc",
-                    location: "proxy-server.js:step-exec-first-thinking",
-                    message: "First thinking delta from Direct API",
-                    data: {
-                      msFromStart: _apiFirstThinkMs,
-                      textLen: evt.text.length,
-                    },
-                    timestamp: Date.now(),
-                    hypothesisId: "DirectAPI",
-                  }),
-                },
-              ).catch(() => {});
-              // #endregion
             }
             _apiThinkChars += evt.text.length;
             res.write(
@@ -3610,29 +3206,6 @@ app.post("/chat", async (req, res) => {
           } else if (evt.type === "token") {
             if (!_apiFirstTokenMs) {
               _apiFirstTokenMs = Date.now() - apiStepStart;
-              // #region agent log
-              fetch(
-                "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "X-Debug-Session-Id": "abaffc",
-                  },
-                  body: JSON.stringify({
-                    sessionId: "abaffc",
-                    location: "proxy-server.js:step-exec-first-token",
-                    message: "First token from Direct API",
-                    data: {
-                      msFromStart: _apiFirstTokenMs,
-                      thinkChars: _apiThinkChars,
-                    },
-                    timestamp: Date.now(),
-                    hypothesisId: "DirectAPI",
-                  }),
-                },
-              ).catch(() => {});
-              // #endregion
             }
             stepResultText += evt.text;
             res.write(
@@ -3662,57 +3235,11 @@ app.post("/chat", async (req, res) => {
       console.log(
         `[step-exec] Direct API done: ${stepResultText.length} chars in ${Date.now() - apiStepStart}ms`,
       );
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "abaffc",
-          },
-          body: JSON.stringify({
-            sessionId: "abaffc",
-            location: "proxy-server.js:step-exec-direct-api-done",
-            message: "Step execution Direct API success",
-            data: {
-              resultLen: stepResultText.length,
-              elapsedMs: Date.now() - apiStepStart,
-            },
-            timestamp: Date.now(),
-            hypothesisId: "DirectAPI",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       return;
     } catch (stepApiErr) {
       console.warn(
         `[step-exec] Direct API failed: ${stepApiErr.message}, falling back to CLI`,
       );
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "abaffc",
-          },
-          body: JSON.stringify({
-            sessionId: "abaffc",
-            location: "proxy-server.js:step-exec-direct-api-fail",
-            message: "Step execution Direct API failed, falling back to CLI",
-            data: {
-              error: stepApiErr.message,
-              elapsedMs: Date.now() - apiStepStart,
-            },
-            timestamp: Date.now(),
-            hypothesisId: "DirectAPI",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
     }
   }
 
@@ -3812,34 +3339,6 @@ app.post("/chat", async (req, res) => {
   }
   const spawnEnv = cleanEnv;
   const child = spawn(claudePath, cliArgs, { env: spawnEnv });
-
-  // #region agent log
-  const _cliSpawnTime = Date.now();
-  fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "abaffc",
-    },
-    body: JSON.stringify({
-      sessionId: "abaffc",
-      location: "proxy-server.js:cli-spawn",
-      message: "CLI process spawned",
-      data: {
-        promptTier,
-        effortLevel,
-        model: selectedModel,
-        isStepExecution,
-        maxThinkingTokens: cleanEnv.MAX_THINKING_TOKENS,
-        disableAdaptiveThinking:
-          cleanEnv.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING || "unset",
-        cliArgsCount: cliArgs.length,
-      },
-      timestamp: _cliSpawnTime,
-      hypothesisId: "H2,H4",
-    }),
-  }).catch(() => {});
-  // #endregion
 
   // CLI 超时保护：light 45s, standard 300s, heavy 600s
   // 复杂任务（如 DCF 建模）需要多轮代码生成+执行，120s 远不够
@@ -3988,39 +3487,8 @@ app.post("/chat", async (req, res) => {
   let _firstThinkEvtTime = 0;
   let _firstTokenEvtTime = 0;
   let _parsedEvtTypes = {};
-  // #region agent log
-  let _toolUseCount = 0;
-  let _toolUseLog = [];
-  // #endregion
   child.stdout.on("data", (data) => {
     _lastDataTime = Date.now();
-    // #region agent log
-    if (!_firstStdoutTime) {
-      _firstStdoutTime = Date.now();
-      fetch(
-        "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "abaffc",
-          },
-          body: JSON.stringify({
-            sessionId: "abaffc",
-            location: "proxy-server.js:cli-first-stdout",
-            message: "First CLI stdout chunk",
-            data: {
-              msSinceSpawn: _firstStdoutTime - _cliSpawnTime,
-              chunkLen: data.length,
-              chunkHead: data.toString().substring(0, 200),
-            },
-            timestamp: _firstStdoutTime,
-            hypothesisId: "H3",
-          }),
-        },
-      ).catch(() => {});
-    }
-    // #endregion
     _lineBuf += data.toString();
     const lines = _lineBuf.split("\n");
     _lineBuf = lines.pop() ?? "";
@@ -4031,66 +3499,11 @@ app.post("/chat", async (req, res) => {
       try {
         const evt = JSON.parse(line);
 
-        // #region agent log
-        if (!_firstParsedEvtTime) {
-          _firstParsedEvtTime = Date.now();
-          fetch(
-            "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Debug-Session-Id": "abaffc",
-              },
-              body: JSON.stringify({
-                sessionId: "abaffc",
-                location: "proxy-server.js:cli-first-parsed",
-                message: "First parsed CLI event",
-                data: {
-                  msSinceSpawn: _firstParsedEvtTime - _cliSpawnTime,
-                  evtType: evt.type,
-                  subType: evt.event?.type || evt.message?.role || "n/a",
-                },
-                timestamp: _firstParsedEvtTime,
-                hypothesisId: "H3,H4",
-              }),
-            },
-          ).catch(() => {});
-        }
-        _parsedEvtTypes[evt.type] = (_parsedEvtTypes[evt.type] || 0) + 1;
-        // #endregion
-
         if (evt.type === "stream_event") {
           const se = evt.event;
           if (se.type === "content_block_delta") {
             if (se.delta?.type === "text_delta" && se.delta.text) {
               if (!_firstTokenTime) _firstTokenTime = Date.now();
-              // #region agent log
-              if (!_firstTokenEvtTime) {
-                _firstTokenEvtTime = Date.now();
-                fetch(
-                  "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "X-Debug-Session-Id": "abaffc",
-                    },
-                    body: JSON.stringify({
-                      sessionId: "abaffc",
-                      location: "proxy-server.js:cli-first-token",
-                      message: "First text_delta from CLI",
-                      data: {
-                        msSinceSpawn: _firstTokenEvtTime - _cliSpawnTime,
-                        textLen: se.delta.text.length,
-                      },
-                      timestamp: _firstTokenEvtTime,
-                      hypothesisId: "H2",
-                    }),
-                  },
-                ).catch(() => {});
-              }
-              // #endregion
               resultText += se.delta.text;
               _tokenCount++;
               res.write(
@@ -4101,33 +3514,6 @@ app.post("/chat", async (req, res) => {
               se.delta.thinking
             ) {
               if (!_firstThinkTime) _firstThinkTime = Date.now();
-              // #region agent log
-              if (!_firstThinkEvtTime) {
-                _firstThinkEvtTime = Date.now();
-                fetch(
-                  "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "X-Debug-Session-Id": "abaffc",
-                    },
-                    body: JSON.stringify({
-                      sessionId: "abaffc",
-                      location: "proxy-server.js:cli-first-thinking-delta",
-                      message: "First thinking_delta from CLI (stream_event)",
-                      data: {
-                        msSinceSpawn: _firstThinkEvtTime - _cliSpawnTime,
-                        thinkingLen: se.delta.thinking.length,
-                        thinkingHead: se.delta.thinking.substring(0, 60),
-                      },
-                      timestamp: _firstThinkEvtTime,
-                      hypothesisId: "H1,H4",
-                    }),
-                  },
-                ).catch(() => {});
-              }
-              // #endregion
               _thinkingText += se.delta.thinking;
               res.write(
                 `data: ${JSON.stringify({ type: "thinking", text: se.delta.thinking })}\n\n`,
@@ -4139,108 +3525,12 @@ app.post("/chat", async (req, res) => {
             se.content_block?.type === "tool_use" &&
             !res.writableEnded
           ) {
-            // #region agent log
-            _toolUseCount++;
-            const _tuTime = Date.now();
-            _toolUseLog.push({
-              name: se.content_block.name,
-              ms: _tuTime - _cliSpawnTime,
-            });
-            fetch(
-              "http://127.0.0.1:7244/ingest/654d9aa3-fbba-48f2-b4ce-e7b9fc0ed511",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "abaffc",
-                },
-                body: JSON.stringify({
-                  sessionId: "abaffc",
-                  location: "proxy-server.js:cli-tool-use",
-                  message: `CLI tool_use #${_toolUseCount}: ${se.content_block.name}`,
-                  data: {
-                    toolName: se.content_block.name,
-                    toolUseIndex: _toolUseCount,
-                    msSinceSpawn: _tuTime - _cliSpawnTime,
-                    promptTier,
-                  },
-                  timestamp: _tuTime,
-                  hypothesisId: "H2,H3",
-                }),
-              },
-            ).catch(() => {});
-            // #endregion
             res.write(
               `data: ${JSON.stringify({ type: "activity", action: "tool_use", name: se.content_block.name })}\n\n`,
             );
           }
         } else if (evt.type === "assistant" && evt.message?.content) {
           if (!_firstTokenTime) _firstTokenTime = Date.now();
-          // #region agent log
-          const blockTypes = evt.message.content.map((b) => b.type);
-          const textBlocks = evt.message.content.filter(
-            (b) => b.type === "text",
-          );
-          const thinkBlocks = evt.message.content.filter(
-            (b) => b.type === "thinking",
-          );
-          fetch(
-            "http://127.0.0.1:7244/ingest/654d9aa3-fbba-48f2-b4ce-e7b9fc0ed511",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Debug-Session-Id": "abaffc",
-              },
-              body: JSON.stringify({
-                sessionId: "abaffc",
-                location: "proxy-server.js:cli-assistant-msg",
-                message: "CLI assistant message arrived (batch)",
-                data: {
-                  msSinceSpawn: Date.now() - _cliSpawnTime,
-                  blockTypes,
-                  thinkingLen: thinkBlocks[0]?.thinking?.length || 0,
-                  textLen: textBlocks.reduce(
-                    (s, b) => s + (b.text?.length || 0),
-                    0,
-                  ),
-                  toolUseSoFar: _toolUseCount,
-                },
-                timestamp: Date.now(),
-                hypothesisId: "H2,H5",
-              }),
-            },
-          ).catch(() => {});
-          if (thinkBlocks.length > 0 && !_firstThinkEvtTime) {
-            _firstThinkEvtTime = Date.now();
-            fetch(
-              "http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "abaffc",
-                },
-                body: JSON.stringify({
-                  sessionId: "abaffc",
-                  location: "proxy-server.js:cli-assistant-thinking",
-                  message: "Thinking from assistant msg (NOT streaming)",
-                  data: {
-                    msSinceSpawn: _firstThinkEvtTime - _cliSpawnTime,
-                    blockTypes,
-                    thinkingLen: thinkBlocks[0].thinking?.length || 0,
-                    thinkingHead: (thinkBlocks[0].thinking || "").substring(
-                      0,
-                      60,
-                    ),
-                  },
-                  timestamp: _firstThinkEvtTime,
-                  hypothesisId: "H4",
-                }),
-              },
-            ).catch(() => {});
-          }
-          // #endregion
           for (const block of evt.message.content) {
             if (block.type === "thinking" && block.thinking) {
               _thinkingText += block.thinking;
@@ -4288,108 +3578,6 @@ app.post("/chat", async (req, res) => {
   child.on("close", (code, signal) => {
     clearTimeout(cliTimer);
     clearInterval(_idleTimer);
-    // #region agent log
-    fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "eab716",
-      },
-      body: JSON.stringify({
-        sessionId: "eab716",
-        location: "proxy-server.js:cli-close",
-        message: "CLI process closed",
-        data: {
-          code,
-          signal,
-          resultTextLen: resultText?.length || 0,
-          stderrLen: _stderrBuf?.length || 0,
-          stderrHead: (_stderrBuf || "").substring(0, 300),
-          resultHead: (resultText || "").substring(0, 200),
-          responseDone,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    console.log(
-      `[cli-close] code=${code} signal=${signal} resultLen=${resultText?.length || 0} stderrLen=${_stderrBuf?.length || 0} stderr="${(_stderrBuf || "").substring(0, 150)}"`,
-    );
-    // #endregion
-    // #region agent log
-    fetch("http://127.0.0.1:7244/ingest/63acb95d-6f91-4165-a07a-5bab2abb61eb", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "abaffc",
-      },
-      body: JSON.stringify({
-        sessionId: "abaffc",
-        location: "proxy-server.js:cli-timeline-summary",
-        message: "CLI thinking timeline summary",
-        data: {
-          totalMs: Date.now() - _cliSpawnTime,
-          firstStdoutMs: _firstStdoutTime
-            ? _firstStdoutTime - _cliSpawnTime
-            : -1,
-          firstParsedEvtMs: _firstParsedEvtTime
-            ? _firstParsedEvtTime - _cliSpawnTime
-            : -1,
-          firstThinkingMs: _firstThinkEvtTime
-            ? _firstThinkEvtTime - _cliSpawnTime
-            : -1,
-          firstTokenMs: _firstTokenEvtTime
-            ? _firstTokenEvtTime - _cliSpawnTime
-            : -1,
-          thinkingChars: _thinkingText.length,
-          resultChars: resultText.length,
-          parsedEvtTypes: _parsedEvtTypes,
-          toolUseCount: _toolUseCount,
-          toolUseLog: _toolUseLog,
-          isStepExecution,
-          promptTier,
-        },
-        timestamp: Date.now(),
-        hypothesisId: "H1,H2,H3,H4",
-      }),
-    }).catch(() => {});
-    // #endregion
-    // #region agent log
-    fetch("http://127.0.0.1:7244/ingest/654d9aa3-fbba-48f2-b4ce-e7b9fc0ed511", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "abaffc",
-      },
-      body: JSON.stringify({
-        sessionId: "abaffc",
-        location: "proxy-server.js:cli-close-summary",
-        message: "CLI total time breakdown",
-        data: {
-          totalMs: Date.now() - _cliSpawnTime,
-          startupMs: _firstStdoutTime ? _firstStdoutTime - _cliSpawnTime : -1,
-          firstThinkingMs: _firstThinkEvtTime
-            ? _firstThinkEvtTime - _cliSpawnTime
-            : -1,
-          firstTokenMs: _firstTokenEvtTime
-            ? _firstTokenEvtTime - _cliSpawnTime
-            : -1,
-          thinkingChars: _thinkingText.length,
-          resultChars: resultText.length,
-          toolUseCount: _toolUseCount,
-          toolUseLog: _toolUseLog,
-          promptTier,
-          model: selectedModel,
-          effortLevel,
-          maxTurns,
-          webSearch: !!webSearch,
-          code,
-          signal,
-        },
-        timestamp: Date.now(),
-        hypothesisId: "H1,H2,H3,H4,H5",
-      }),
-    }).catch(() => {});
-    // #endregion
     const TOKEN_LIMIT_RE =
       /exceeded the \d+ output token maximum|output_token.*limit|max_tokens_exceeded/i;
     const isTokenLimit =
@@ -4414,34 +3602,6 @@ app.post("/chat", async (req, res) => {
       res.end();
       return;
     }
-
-    // #region agent log
-    const _maxTurnsInt = parseInt(maxTurns, 10) || 5;
-    const _turnsTruncated =
-      _toolUseCount >= _maxTurnsInt && resultText.length < 200;
-    if (_turnsTruncated) {
-      fetch("http://127.0.0.1:7244/ingest/654d9aa3-fbba-48f2-b4ce-e7b9fc0ed511", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "abaffc" },
-        body: JSON.stringify({
-          sessionId: "abaffc",
-          location: "proxy-server.js:maxturns-truncation",
-          message: "Response likely truncated by maxTurns",
-          data: { maxTurns: _maxTurnsInt, toolUseCount: _toolUseCount, resultChars: resultText.length },
-          timestamp: Date.now(),
-          hypothesisId: "H1,H4",
-        }),
-      }).catch(() => {});
-      console.log(
-        `[maxturns-truncation] ⚠️ toolUseCount=${_toolUseCount} >= maxTurns=${_maxTurnsInt}, resultChars=${resultText.length} — response likely truncated`,
-      );
-      if (!res.writableEnded) {
-        res.write(
-          `data: ${JSON.stringify({ type: "token", text: "\n\n⚠️ _AI 使用了大量工具但未生成完整结果（工具轮次已耗尽），正在自动重试…_" })}\n\n`,
-        );
-      }
-    }
-    // #endregion
 
     if (code !== 0 && !resultText) {
       const stderrHint = _stderrBuf.trim().substring(0, 300);
