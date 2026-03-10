@@ -1,11 +1,14 @@
 /**
- * WPS 数据适配层
+ * WPS / Office.js 宿主适配层 (本地 proxy 模式)
  *
- * 架构：Plugin Host main.js 定时将 ET 数据 POST 到 proxy-server，
+ * 架构：Plugin Host (WPS/Office.js) 定时将表格数据 POST 到 proxy-server，
  * 本模块通过 GET /wps-context 获取最新数据。
  * 代码执行：POST /execute-code 提交 → 轮询 /code-result/:id 获取结果。
+ *
+ * 同时实现 HostAdapter 接口，供平台无关的上层调用。
  */
-import type { WpsContext } from "../types";
+import type { SpreadsheetContext, Platform, DiffResult, AddToChatPayload } from "../types";
+import type { HostAdapter } from "./hostAdapter";
 
 const PROXY_URL = "http://127.0.0.1:3001";
 
@@ -15,7 +18,7 @@ export function isWpsAvailable(): boolean {
   return _wpsAvailable;
 }
 
-export async function getWpsContext(): Promise<WpsContext> {
+export async function getContext(): Promise<SpreadsheetContext> {
   try {
     const res = await fetch(`${PROXY_URL}/wps-context`, {
       signal: AbortSignal.timeout(1500),
@@ -33,21 +36,23 @@ export async function getWpsContext(): Promise<WpsContext> {
 
     _wpsAvailable = true;
     return {
+      platform: (data.platform as Platform) ?? "wps-et",
       workbookName: data.workbookName ?? "",
       sheetNames: data.sheetNames ?? [],
       selection: data.selection ?? null,
       usedRange: data.usedRange ?? null,
     };
-  } catch (err) {
+  } catch {
     _wpsAvailable = false;
     return getMockContext();
   }
 }
 
+/** @deprecated Use getContext() instead */
+export const getWpsContext = getContext;
+
 const CODE_RESULT_POLL_MS = 300;
 const CODE_RESULT_TIMEOUT_MS = 90000;
-
-import type { DiffResult, AddToChatPayload } from "../types";
 
 export interface ExecuteResult {
   result: string;
@@ -208,12 +213,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 let _lastCtxJson = "";
-let _lastSelectionCtx: WpsContext | null = null;
+let _lastSelectionCtx: SpreadsheetContext | null = null;
 let _selNullCount = 0;
 const SEL_NULL_GRACE = 2;
 
 export function onSelectionChange(
-  callback: (ctx: WpsContext) => void,
+  callback: (ctx: SpreadsheetContext) => void,
 ): () => void {
   let active = true;
   const POLL_INTERVAL = 2500;
@@ -221,7 +226,7 @@ export function onSelectionChange(
   const poll = async () => {
     if (!active) return;
     try {
-      const ctx = await getWpsContext();
+      const ctx = await getContext();
 
       if (!ctx.selection && _lastSelectionCtx?.selection) {
         _selNullCount++;
@@ -262,8 +267,9 @@ export function onSelectionChange(
   };
 }
 
-function getMockContext(): WpsContext {
+function getMockContext(): SpreadsheetContext {
   return {
+    platform: "wps-et",
     workbookName: "示例工作簿.xlsx",
     sheetNames: ["Sheet1", "销售数据", "汇总"],
     selection: {
@@ -282,3 +288,26 @@ function getMockContext(): WpsContext {
     },
   };
 }
+
+// ── HostAdapter 实现 ──
+
+export class WpsHostAdapter implements HostAdapter {
+  readonly platform: Platform = "wps-et";
+
+  getContext = getContext;
+  executeCode = executeCode;
+  executePython = executePython;
+  executeShell = executeShell;
+  previewHtml = previewHtml;
+  navigateToCell = navigateToCell;
+  revertDiff = revertDiff;
+  onSelectionChange = onSelectionChange;
+  pollAddToChat = pollAddToChat;
+
+  isAvailable(): boolean {
+    return _wpsAvailable;
+  }
+}
+
+/** 默认 WPS 适配器单例 */
+export const wpsHostAdapter = new WpsHostAdapter();

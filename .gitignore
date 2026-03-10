@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+dist-gsheets/
 dist-ssr/
 _dist_stage/
 *.tar.gz
@@ -45,6 +46,9 @@ certs/
 *.sln
 *.sw?
 *.local
+
+# Google Apps Script (clasp)
+google-addon/.clasp.json
 
 # OS files
 Thumbs.db

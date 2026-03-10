@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo } from "react";
-import type { WpsContext } from "../types";
+import type { SpreadsheetContext } from "../types";
 import styles from "./AtContextPopup.module.css";
 
 interface AtOption {
@@ -14,7 +14,7 @@ interface AtOption {
 interface Props {
   visible: boolean;
   filter: string;
-  wpsCtx: WpsContext | null;
+  wpsCtx: SpreadsheetContext | null;
   onSelect: (opt: AtOption) => void;
   onClose: () => void;
 }
@@ -44,7 +44,7 @@ function CtxIcon({ type }: { type: AtOption["iconType"] }) {
   );
 }
 
-function buildOptions(ctx: WpsContext | null): AtOption[] {
+function buildOptions(ctx: SpreadsheetContext | null): AtOption[] {
   const opts: AtOption[] = [];
 
   if (ctx?.selection) {

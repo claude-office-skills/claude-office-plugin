@@ -2,6 +2,7 @@
 name: sandbox-executor
 type: bundled
 description: 沙盒执行器 — 在安全隔离环境中运行 Python/Shell 脚本获取外部数据
+platforms: [all]
 version: 1.0.0
 modes: [agent, plan]
 context:

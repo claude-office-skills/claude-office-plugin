@@ -2,6 +2,7 @@
 name: plan-mode
 type: mode
 description: 步骤规划模式 — 先输出计划，逐步确认后执行
+platforms: [all]
 version: 1.0.0
 enforcement:
   codeBridge: conditional

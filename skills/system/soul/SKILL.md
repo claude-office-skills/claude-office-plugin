@@ -2,6 +2,7 @@
 name: soul-engine
 version: "1.0"
 description: 专属助理人格引擎 — 控制助理的身份、口吻和行为风格
+platforms: [all]
 context:
   always: true
   priority: 100

@@ -2,6 +2,7 @@
 name: memory-manager
 version: "1.0"
 description: 长记忆管理器 — 隐式学习用户偏好，生成对话摘要
+platforms: [all]
 context:
   always: true
   priority: 90

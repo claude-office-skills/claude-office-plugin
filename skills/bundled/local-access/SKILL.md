@@ -3,6 +3,7 @@ name: local-access
 description: macOS 本地计算机操作 — 日历、通讯录、邮件、提醒、Finder、剪贴板、浏览器、应用控制
 version: 1.0.0
 tags: [local, macos, calendar, contacts, mail, reminders, finder, clipboard, browser, apps, system]
+platforms: [wps-et, office-excel]
 modes: [agent]
 context:
   keywords: [日历, 日程, 事件, 会议, 通讯录, 联系人, 邮件, 发邮件, 未读邮件, 提醒, 提醒事项, Finder, 文件夹, 剪贴板, 复制, 粘贴, 浏览器, 标签页, 打开网页, 应用, 启动, 退出, 系统信息, 本地, calendar, contacts, mail, reminders, clipboard, browser, apps, 电池, 磁盘]

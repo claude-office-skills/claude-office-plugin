@@ -2,6 +2,7 @@
 name: sensortower
 type: connector
 description: SensorTower 移动应用数据连接器 — App 下载量、收入、DAU/MAU 数据
+platforms: [all]
 version: 1.0.0
 modes: [agent, plan, ask]
 context:

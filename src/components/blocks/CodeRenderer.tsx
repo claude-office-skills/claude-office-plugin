@@ -1,13 +1,8 @@
 import { useState, useRef, useLayoutEffect, memo } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
-import {
-  executeCode,
-  executePython,
-  executeShell,
-  previewHtml,
-  BlockedError,
-} from "../../api/wpsAdapter";
+import { getHostAdapter } from "../../api/platformDetect";
+import { BlockedError } from "../../api/wpsAdapter";
 import type {
   CodeBlock as CodeBlockType,
   DiffResult,
@@ -66,18 +61,19 @@ function CodeRenderer({
   const runCode = async (force?: boolean) => {
     setRunning(true);
     setBlockedReason(null);
+    const host = getHostAdapter();
     try {
       const lang = (block.language || "javascript").toLowerCase();
       const isShell = ["bash", "shell", "sh", "zsh", "terminal"].includes(lang);
       let execResult: { result: string; diff?: DiffResult | null };
       if (lang === "python" || lang === "py") {
-        execResult = await executePython(block.code);
+        execResult = await host.executePython(block.code);
       } else if (isShell) {
-        execResult = await executeShell(block.code);
+        execResult = await host.executeShell(block.code);
       } else if (lang === "html" || lang === "htm") {
-        execResult = await previewHtml(block.code);
+        execResult = await host.previewHtml(block.code);
       } else {
-        execResult = await executeCode(block.code, undefined, force);
+        execResult = await host.executeCode(block.code, undefined, force);
       }
       onExecuted(block.id, execResult.result, undefined, execResult.diff);
     } catch (err) {

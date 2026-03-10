@@ -178,12 +178,39 @@ export interface UsedRangeContext {
   hasMoreRows: boolean;
 }
 
-export interface WpsContext {
+// ── Platform Abstraction (multi-host support) ──
+
+export type Platform =
+  | "wps-et"
+  | "office-excel"
+  | "google-sheets"
+  | "wps-word"
+  | "google-docs"
+  | "wps-ppt"
+  | "google-slides";
+
+export type AppCategory = "spreadsheet" | "document" | "presentation";
+
+export const PLATFORM_CATEGORY: Record<Platform, AppCategory> = {
+  "wps-et": "spreadsheet",
+  "office-excel": "spreadsheet",
+  "google-sheets": "spreadsheet",
+  "wps-word": "document",
+  "google-docs": "document",
+  "wps-ppt": "presentation",
+  "google-slides": "presentation",
+};
+
+export interface SpreadsheetContext {
+  platform: Platform;
   selection: SelectionContext | null;
   usedRange?: UsedRangeContext | null;
   workbookName: string;
   sheetNames: string[];
 }
+
+/** @deprecated Use SpreadsheetContext instead */
+export type WpsContext = SpreadsheetContext;
 
 export interface ModelOption {
   id: string;

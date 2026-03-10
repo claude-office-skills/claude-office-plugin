@@ -3,6 +3,7 @@ name: equity-valuation
 description: 股票估值报告引擎 — 数据质量门控/多方法估值/质量评估/风险矩阵/决策框架的 Excel 完整估值工作簿
 version: 1.0.0
 tags: [equity, valuation, investment, report, dcf, multiples, risk]
+platforms: [wps-et, office-excel]
 modes: [agent, plan, ask]
 context:
   keywords: [估值报告, 投资分析, 股票分析, 投资备忘录, 目标价, 买入, 卖出, 持有, 基本面, 便宜, 贵, 低估, 高估, 投资价值, 值不值得买, 选股, 对比分析, 质量评估, 风险评估, 置信度, 安全边际, margin of safety, investment memo, thesis, risk register]

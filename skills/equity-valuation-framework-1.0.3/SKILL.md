@@ -1,6 +1,7 @@
 ---
 name: equity-valuation-framework
 description: Provides a decision-grade equity valuation playbook and report standard (multiples, DCF, quality assessment, scenarios, margin of safety); used when users request valuation, best-stock comparison, investment thesis explanation, or structured risk review.
+platforms: [all]
 compatibility: Requires structured market and financial inputs (typically from vnstock workflows); no direct data fetching in this skill.
 metadata: {"openclaw":{"emoji":"🧮"}}
 ---

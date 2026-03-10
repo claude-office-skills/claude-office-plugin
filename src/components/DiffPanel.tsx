@@ -1,6 +1,6 @@
 import { memo, useState, useCallback } from "react";
 import type { DiffResult } from "../types";
-import { navigateToCell } from "../api/wpsAdapter";
+import { getHostAdapter } from "../api/platformDetect";
 import styles from "./DiffPanel.module.css";
 
 interface Props {
@@ -18,13 +18,13 @@ function DiffPanel({ diff }: Props) {
 
   const handleCellClick = useCallback(
     (cellAddress: string) => {
-      navigateToCell(diff.sheetName, cellAddress).catch(() => {});
+      getHostAdapter().navigateToCell(diff.sheetName, cellAddress).catch(() => {});
     },
     [diff.sheetName],
   );
 
   const handleSheetClick = useCallback(() => {
-    navigateToCell(diff.sheetName).catch(() => {});
+    getHostAdapter().navigateToCell(diff.sheetName).catch(() => {});
   }, [diff.sheetName]);
 
   return (

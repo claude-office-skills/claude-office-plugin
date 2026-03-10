@@ -2,6 +2,7 @@
 name: onboarding
 version: "1.0"
 description: 首次见面引导 — 在用户完成 Onboarding 后的第一次对话中使用
+platforms: [all]
 context:
   keywords:
     - 第一次

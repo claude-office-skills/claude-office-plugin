@@ -2,6 +2,7 @@
 name: agent-mode
 type: mode
 description: 自动执行模式 — 直接生成并执行代码完成用户任务
+platforms: [all]
 version: 1.0.0
 default: true
 enforcement:

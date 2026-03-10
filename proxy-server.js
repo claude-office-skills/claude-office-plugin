@@ -176,14 +176,21 @@ function parseFrontmatter(raw) {
 const SKILL_MAX_LOAD = 4;
 const CONNECTOR_MAX_LOAD = 2;
 
-function matchSkills(allSkills, userMessage, wpsContext, mode, maxLoad) {
+function matchSkills(allSkills, userMessage, wpsContext, mode, maxLoad, platform) {
   const scored = [];
   const msg = (userMessage || "").toLowerCase();
   const limit = maxLoad || SKILL_MAX_LOAD;
+  const activePlatform = platform || _wpsContext.platform || "wps-et";
 
   for (const [id, skill] of allSkills) {
     if (mode && Array.isArray(skill.modes) && !skill.modes.includes(mode)) {
       continue;
+    }
+
+    if (Array.isArray(skill.platforms) && skill.platforms.length > 0) {
+      if (!skill.platforms.includes(activePlatform) && !skill.platforms.includes("all")) {
+        continue;
+      }
     }
 
     const ctx = skill.context || {};
@@ -876,11 +883,19 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
 ];
 
+app.use(function(req, res, next) {
+  var origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, anthropic-version');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      cb(null, false);
+      cb(null, true);
     },
     credentials: true,
   }),
@@ -2052,8 +2067,21 @@ app.post("/v2/plan/skip-step", (req, res) => {
   }
 });
 
-// ── WPS 上下文中转 ─────────────────────────────────────────
+// ── 异步 Chat 结果存储 (Google Sheets non-streaming) ─────
+const _asyncChatResults = new Map();
+
+app.get("/chat-result/:id", (req, res) => {
+  const id = req.params.id;
+  const entry = _asyncChatResults.get(id);
+  if (!entry) {
+    return res.status(404).json({ error: "Request not found" });
+  }
+  res.json(entry);
+});
+
+// ── 表格上下文中转 (multi-platform) ───────────────────────
 let _wpsContext = {
+  platform: "wps-et",
   workbookName: "",
   sheetNames: [],
   selection: null,
@@ -2066,7 +2094,11 @@ app.post("/wps-context", (req, res) => {
     res.json({ ok: true, skipped: true });
     return;
   }
-  _wpsContext = { ...req.body, timestamp: Date.now() };
+  _wpsContext = {
+    ...req.body,
+    platform: req.body.platform || _wpsContext.platform || "wps-et",
+    timestamp: Date.now(),
+  };
   res.json({ ok: true });
 });
 
@@ -2764,7 +2796,8 @@ app.post("/chat", async (req, res) => {
   }
 
   if (context) {
-    fullPrompt += `[当前 Excel 上下文]\n${smartSampleContext(context)}\n\n`;
+    const ctxStr = typeof context === 'string' ? context : JSON.stringify(context, null, 2);
+    fullPrompt += `[当前 Excel 上下文]\n${smartSampleContext(ctxStr)}\n\n`;
   }
 
   if (Array.isArray(attachments) && attachments.length > 0) {
@@ -2823,6 +2856,97 @@ app.post("/chat", async (req, res) => {
 
   const lastMsg = messages[messages.length - 1];
   fullPrompt += `用户: ${lastMsg.content}`;
+
+  // ── Non-streaming mode (for Google Sheets / Apps Script) ──
+  if (req.body.nonStreaming && USE_DIRECT_API && directApi.isReady()) {
+    const isAsync = req.body.async === true;
+
+    if (isAsync) {
+      const asyncId = "async_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      _asyncChatResults.set(asyncId, { done: false, startedAt: Date.now() });
+      _activeChats--;
+      res.json({ requestId: asyncId });
+
+      (async () => {
+        _activeChats++;
+        try {
+          let fullText = "";
+          const codeBlockRe = /```(\w+)?\n([\s\S]*?)```/g;
+
+          await directApi.streamChat({
+            systemPrompt: systemOnlyPrompt,
+            messages: messages.map((m) => ({
+              role: m.role === "user" ? "user" : "assistant",
+              content: m.content,
+            })),
+            model: selectedModel,
+            onText: (t) => { fullText += t; },
+          });
+
+          const codeBlocks = [];
+          let match;
+          while ((match = codeBlockRe.exec(fullText)) !== null) {
+            codeBlocks.push({ language: match[1] || "javascript", code: match[2].trim() });
+          }
+
+          _asyncChatResults.set(asyncId, {
+            done: true,
+            content: fullText,
+            codeBlocks,
+            model: selectedModel,
+            agent: resolvedAgent ? resolvedAgent.name : null,
+          });
+        } catch (apiErr) {
+          _asyncChatResults.set(asyncId, {
+            done: true,
+            error: "AI 调用失败: " + (apiErr.message || String(apiErr)),
+          });
+        }
+        _activeChats--;
+
+        setTimeout(() => _asyncChatResults.delete(asyncId), 300000);
+      })();
+
+      return;
+    }
+
+    try {
+      let fullText = "";
+      const codeBlocks = [];
+      const codeBlockRe = /```(\w+)?\n([\s\S]*?)```/g;
+
+      await directApi.streamChat({
+        systemPrompt: systemOnlyPrompt,
+        messages: messages.map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.content,
+        })),
+        model: selectedModel,
+        onText: (t) => { fullText += t; },
+      });
+
+      let match;
+      while ((match = codeBlockRe.exec(fullText)) !== null) {
+        codeBlocks.push({
+          language: match[1] || "javascript",
+          code: match[2].trim(),
+        });
+      }
+
+      _activeChats--;
+      return res.json({
+        content: fullText,
+        codeBlocks,
+        model: selectedModel,
+        agent: resolvedAgent ? resolvedAgent.name : null,
+      });
+    } catch (apiErr) {
+      _activeChats--;
+      return res.status(500).json({
+        error: "AI 调用失败: " + (apiErr.message || String(apiErr)),
+      });
+    }
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");

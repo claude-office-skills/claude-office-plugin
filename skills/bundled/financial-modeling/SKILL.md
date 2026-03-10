@@ -3,6 +3,7 @@ name: financial-modeling
 description: 投行级金融建模引擎 — 公式驱动的多Sheet专业DCF/估值模型
 version: 4.0.0
 tags: [finance, dcf, valuation, model, forecast, multiples, scenario, bloomberg, ib]
+platforms: [wps-et, office-excel]
 modes: [agent, plan, ask]
 context:
   priority: 200

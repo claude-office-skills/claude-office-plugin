@@ -2,6 +2,7 @@
 name: knowledge-base
 type: connector
 description: 企业知识库检索 — 公司规范、流程、制度查询
+platforms: [all]
 version: 1.0.0
 mcp: company-kb
 modes: [agent, plan, ask]

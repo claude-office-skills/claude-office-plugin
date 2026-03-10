@@ -2,6 +2,7 @@
 name: monthly-report
 type: workflow
 description: 自动生成月度报告工作流
+platforms: [wps-et, office-excel]
 version: 1.0.0
 preferredMode: plan
 trigger: /报告

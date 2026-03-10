@@ -2,6 +2,7 @@
 name: similarweb
 type: connector
 description: SimilarWeb 网站分析连接器 — 流量、排名、营销渠道、受众画像等数据
+platforms: [all]
 version: 1.0.0
 modes: [agent, plan, ask]
 context:

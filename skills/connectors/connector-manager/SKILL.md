@@ -2,6 +2,7 @@
 name: connector-manager
 type: connector
 description: 数据源连接器管理 — Agent 自动帮用户查询、配置、创建和测试数据连接器
+platforms: [all]
 version: 1.0.0
 modes: [agent, plan, ask]
 context:

@@ -2,6 +2,7 @@
 name: web-search
 type: connector
 description: 实时网络搜索 — 获取最新信息和数据
+platforms: [all]
 version: 1.0.0
 mcp: tavily-search
 modes: [agent, plan, ask]

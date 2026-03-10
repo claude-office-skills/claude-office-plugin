@@ -2,6 +2,7 @@
 name: ask-mode
 type: mode
 description: 只读分析模式 — 仅用文本回答，绝对禁止生成代码
+platforms: [all]
 version: 1.0.0
 enforcement:
   codeBridge: false

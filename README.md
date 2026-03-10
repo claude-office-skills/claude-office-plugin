@@ -1,17 +1,25 @@
-# Claude for WPS Excel 插件
+# Claude Office Plugin
 
-WPS Office Excel AI 助手——通过自然语言对话操控表格，由 Claude API 驱动。
+跨平台办公套件 AI 助手——通过自然语言对话操控表格，由 Claude API 驱动。
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-2.0.0--dev-orange)
-![Platform](https://img.shields.io/badge/platform-WPS%20Office-red)
+![Version](https://img.shields.io/badge/version-3.0.0-orange)
+![Platform](https://img.shields.io/badge/platform-WPS%20|%20Google%20Sheets%20|%20Office-blue)
+
+## 支持平台
+
+| 平台 | 状态 | 说明 |
+|------|------|------|
+| **WPS Office ET** | ✅ 已完成 | 通过 WPS Plugin Host + 本地代理 |
+| **Google Sheets** | 🚧 开发中 | 通过 Apps Script + HtmlService 侧边栏 |
+| **Microsoft Office Excel** | 📋 规划中 | 通过 Office.js Add-in |
 
 ## 功能特性
 
-- **自然语言对话**：直接用中文描述需求，AI 自动生成并执行 WPS JS 代码
+- **自然语言对话**：直接用中文描述需求，AI 自动生成并执行平台原生代码
 - **三种交互模式**：Agent（自动执行）/ Plan（步骤规划）/ Ask（只读分析）
 - **实时上下文感知**：自动读取当前工作表、选区数据，智能匹配 Skill
-- **代码执行桥**：生成的代码可一键在 WPS 中执行，支持结果回传 + 一键修复
+- **代码执行桥**：生成的代码可一键在表格应用中执行，支持结果回传 + 一键修复
 - **流式响应**：SSE 流式输出，Markdown 渲染 + 代码块语法高亮
 - **会话历史**：自动保存对话记录，支持多会话切换和恢复
 - **模块化 Skills/Commands**：可扩展的技能和命令体系（9 Skills + 14 Commands）
@@ -19,21 +27,40 @@ WPS Office Excel AI 助手——通过自然语言对话操控表格，由 Claud
 - **工作流模板**：预定义多步骤任务（如月度报告自动生成）
 - **剪贴板增强**：支持粘贴文本、表格、图片
 - **模型选择**：Sonnet 4.6 / Opus 4.6 / Haiku 4.5
+- **统一代码库**：一套 React 代码 + HostAdapter 抽象层，输出多平台构建产物
 
 ## 架构概览
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  WPS Excel  │◄───►│  Proxy Server    │◄───►│  React TaskPane │
-│  Plugin Host│     │  (Express :3001) │     │  (Vite :5173)   │
-│  main.js    │     │  proxy-server.js │     │  src/App.tsx     │
-└─────────────┘     └──────────────────┘     └─────────────────┘
-       │                     │                        │
-       │ WPS ET API          │ Claude CLI (SSE)       │ 用户对话
-       │ 读写表格数据        │ Skill/Mode 匹配       │ Markdown 渲染
-       │ 代码执行            │ Session 持久化         │ 代码高亮+执行
-       │                     │ MCP Connectors         │ 模式切换
+                    ┌──────────────────┐
+                    │   React Sidebar  │
+                    │   src/App.tsx    │
+                    │  (HostAdapter)   │
+                    └────────┬─────────┘
+                             │
+               ┌─────────────┼─────────────┐
+               │             │             │
+   ┌───────────▼──┐  ┌──────▼───────┐  ┌──▼──────────┐
+   │  WPS Plugin  │  │ Google Sheets│  │ Office.js   │
+   │  Host (ET)   │  │ (Apps Script)│  │ (未来)      │
+   │  wpsAdapter  │  │ gsAdapter    │  │             │
+   └──────────────┘  └──────────────┘  └─────────────┘
+               │             │
+               └──────┬──────┘
+                      │
+              ┌───────▼───────┐
+              │ Proxy Server  │
+              │ (Express:3001)│
+              │ Claude CLI    │
+              └───────────────┘
 ```
+
+### 构建产物
+
+| 平台 | 输出目录 | 构建命令 | 说明 |
+|------|---------|---------|------|
+| WPS ET | `dist/` | `npm run build` | 多文件，通过 TaskPane 加载 |
+| Google Sheets | `dist-gsheets/` | `npm run build:gsheets` | 单文件 HTML，通过 HtmlService 加载 |
 
 ## 快速开始
 
@@ -94,18 +121,32 @@ bash install-to-wps.sh
 ### 4. 构建生产包
 
 ```bash
-npm run build          # Vite 前端构建
-npm run build:dist     # 完整分发包（Skill 嵌入 + 混淆 + tarball）
+npm run build          # WPS 前端构建
+npm run build:gsheets  # Google Sheets 单文件 HTML 构建
+npm run build:all      # 同时构建 WPS + Google Sheets
+npm run build:dist     # WPS 完整分发包（Skill 嵌入 + 混淆 + tarball）
+```
+
+### 5. Google Sheets 部署
+
+```bash
+# 一键部署（构建 + clasp push）
+npm run deploy:gsheets
+
+# 详细步骤见 google-addon/README.md
 ```
 
 ## 项目结构
 
 ```
-claude-wps-plugin/
-├── src/                           # React 前端（TaskPane 侧边栏）
+claude-office-plugin/
+├── src/                           # React 前端（跨平台侧边栏）
 │   ├── api/
-│   │   ├── claudeClient.ts        # Claude API 调用（SSE 流式响应）
-│   │   ├── wpsAdapter.ts          # WPS JS API 封装 + Mock 模式
+│   │   ├── hostAdapter.ts         # 平台无关接口定义
+│   │   ├── platformDetect.ts      # 平台检测 + HostAdapter 工厂
+│   │   ├── wpsAdapter.ts          # WPS 平台适配器
+│   │   ├── googleSheetsAdapter.ts # Google Sheets 平台适配器
+│   │   ├── claudeClient.ts        # Claude API 调用（SSE + GAS 回退）
 │   │   └── sessionStore.ts        # 会话持久化（CRUD + 记忆）
 │   ├── components/
 │   │   ├── CodeBlock.tsx           # 代码块（语法高亮 + Run/Copy）
@@ -143,6 +184,14 @@ claude-wps-plugin/
 │   ├── main.js                     #   Plugin Host 入口
 │   ├── ribbon.xml                  #   Ribbon 栏 UI 定义
 │   └── *.png                       #   图标资源
+├── google-addon/                   # Google Sheets Add-on
+│   ├── AllInOne.gs                 #   合并的 Apps Script 后端
+│   ├── appsscript.json             #   Add-on 清单
+│   ├── .clasp.json                 #   clasp 配置
+│   └── Sidebar.html                #   构建生成的侧边栏 UI
+├── google-sheets.html              # Google Sheets 构建入口
+├── vite.gsheets.config.ts          # Google Sheets Vite 配置
+├── deploy-gsheets.mjs              # Google Sheets 部署脚本
 ├── manifest.xml                    # WPS 加载项清单
 ├── .claude-plugin/plugin.json      # 插件元数据
 ├── .mcp.json                       # MCP 连接器配置

@@ -1,6 +1,6 @@
 import { useState, useCallback, memo } from "react";
 import type { DiffResult } from "../../types";
-import { navigateToCell } from "../../api/wpsAdapter";
+import { getHostAdapter } from "../../api/platformDetect";
 import SidebarBlock from "../SidebarBlock";
 import { blockStyles } from "../SidebarBlock";
 
@@ -25,7 +25,7 @@ function DiffRenderer({ diff, onRevert }: Props) {
 
   const handleCellClick = useCallback(
     (cellAddress: string) => {
-      navigateToCell(diff.sheetName, cellAddress).catch(() => {});
+      getHostAdapter().navigateToCell(diff.sheetName, cellAddress).catch(() => {});
     },
     [diff.sheetName],
   );

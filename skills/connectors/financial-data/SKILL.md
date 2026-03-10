@@ -2,6 +2,7 @@
 name: financial-data
 type: connector
 description: 金融数据连接器 — 通过 Data Bridge 获取实时股票、财务报表、估值比率等结构化数据
+platforms: [all]
 version: 2.0.0
 modes: [agent, plan, ask]
 context:
