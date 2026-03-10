@@ -5,12 +5,20 @@ interface ErrorRule {
 
 const ERROR_MAP: ErrorRule[] = [
   {
+    test: /请先配置.*API.*Key|未配置.*API.*Key|API.*Key.*标签页/i,
+    message: "请先配置 Anthropic API Key — 点击顶部「API 设置」按钮，在「API Key」标签页中填入您的密钥。",
+  },
+  {
+    test: /Google Apps Script.*不可用|Apps Script.*环境/i,
+    message: "请在 Google Sheets 侧边栏中使用此功能（当前为本地开发模式，Google Apps Script 不可用）。",
+  },
+  {
     test: /403|forbidden|Request not allowed/i,
     message: "当前账号权限不足，请检查 API 订阅状态或切换账号后重试。",
   },
   {
     test: /401|authenticate|Unauthorized|invalid.*key/i,
-    message: "认证已过期，请重新登录或检查 API 密钥配置。",
+    message: "API Key 认证失败，请检查密钥是否正确（点击「API 设置」重新填写）。",
   },
   {
     test: /429|rate.limit|too many|overloaded/i,
@@ -44,13 +52,21 @@ const ERROR_MAP: ErrorRule[] = [
     test: /model.*not.*found|model.*unavailable/i,
     message: "当前模型暂不可用，请切换其他模型后重试。",
   },
+  {
+    test: /API 错误 \(4\d\d\)/i,
+    message: "",  // handled below as passthrough
+  },
 ];
 
 export function friendlyErrorMessage(raw: string): string {
   for (const rule of ERROR_MAP) {
     if (rule.test.test(raw)) {
-      return rule.message;
+      return rule.message || raw;
     }
+  }
+  // 对于短的原始错误（可能本身就是可读的），直接展示
+  if (raw.length <= 120 && !/^Error:|^\[object/.test(raw)) {
+    return raw;
   }
   return `出现了一些问题，请重试。如持续出错，请联系管理员。`;
 }

@@ -17,22 +17,14 @@ import SlashCommandPopup from "./components/SlashCommandPopup";
 import AtContextPopup from "./components/AtContextPopup";
 import { Onboarding, useOnboardingStatus } from "./components/Onboarding";
 import DataConnectorPanel from "./components/DataConnectorPanel";
+import ApiKeyPanel from "./components/ApiKeyPanel";
 import { useTheme } from "./hooks/useTheme";
 import { useAgentManager } from "./hooks/useAgentManager";
 import { useLongTask } from "./hooks/useLongTask";
 import { sendMessage, extractCodeBlocks, checkProxy } from "./api/claudeClient";
 import { analytics } from "./api/analytics";
-import {
-  getWpsContext,
-  onSelectionChange,
-  isWpsAvailable,
-  executeCode,
-  executePython,
-  executeShell,
-  previewHtml,
-  pollAddToChat,
-  BlockedError,
-} from "./api/wpsAdapter";
+import { getHostAdapter } from "./api/platformDetect";
+import { BlockedError } from "./api/wpsAdapter";
 import { friendlyErrorMessage } from "./utils/errorMessages";
 import {
   saveSession,
@@ -43,7 +35,7 @@ import {
 } from "./api/sessionStore";
 import type {
   ChatMessage,
-  WpsContext,
+  SpreadsheetContext,
   CodeBlock,
   AttachmentFile,
   InteractionMode,
@@ -67,6 +59,8 @@ function parsePlanSteps(text: string, mode: string): PlanStep[] | undefined {
   }
   return steps.length >= 2 ? steps : undefined;
 }
+
+const host = getHostAdapter();
 
 export default function App() {
   const { theme, cycleTheme } = useTheme();
@@ -116,7 +110,7 @@ export default function App() {
   } | null>(null);
 
   const [input, setInput] = useState("");
-  const [wpsCtx, setWpsCtx] = useState<WpsContext | null>(null);
+  const [wpsCtx, setWpsCtx] = useState<SpreadsheetContext | null>(null);
   const [proxyMissing, setProxyMissing] = useState(false);
   const [heartbeatOk, setHeartbeatOk] = useState<boolean | null>(null);
   const [applyingMsgId, setApplyingMsgId] = useState<string | null>(null);
@@ -149,6 +143,7 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [connectorsOpen, setConnectorsOpen] = useState(false);
   const [agentListOpen, setAgentListOpen] = useState(true);
+  const [apiKeyPanelOpen, setApiKeyPanelOpen] = useState(false);
 
   const SIDEBAR_MIN = 140;
   const SIDEBAR_MAX = 360;
@@ -223,17 +218,16 @@ export default function App() {
   useEffect(() => {
     const initCtx = async () => {
       try {
-        const ctx = await getWpsContext();
+        const ctx = await host.getContext();
         setWpsCtx(ctx);
       } catch {
-        // 非 WPS 环境，使用 mock
-        const ctx = await getWpsContext();
+        const ctx = await host.getContext();
         setWpsCtx(ctx);
       }
     };
     initCtx();
 
-    const unsubscribe = onSelectionChange((ctx) => setWpsCtx(ctx));
+    const unsubscribe = host.onSelectionChange((ctx) => setWpsCtx(ctx));
     return unsubscribe;
   }, []);
 
@@ -241,6 +235,14 @@ export default function App() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
+
+    if (host.platform === "google-sheets") {
+      try {
+        const hasKey = !!localStorage.getItem("claude-office-api-key");
+        setProxyMissing(!hasKey);
+      } catch { setProxyMissing(true); }
+      return () => { stopped = true; };
+    }
 
     const poll = async () => {
       if (stopped) return;
@@ -295,7 +297,7 @@ export default function App() {
     const poll = async () => {
       if (stopped) return;
       try {
-        const data = await pollAddToChat();
+        const data = await host.pollAddToChat();
         if (data) {
           const label = `${data.sheetName}!${data.address}`;
           const rows = data.values
@@ -509,7 +511,7 @@ export default function App() {
             )?.content || "";
           let sheetList = "";
           try {
-            const freshCtx = await getWpsContext();
+            const freshCtx = await host.getContext();
             if (freshCtx?.sheetNames?.length) {
               sheetList = freshCtx.sheetNames.join(", ");
             }
@@ -553,13 +555,13 @@ export default function App() {
             diff?: import("./types").DiffResult | null;
           };
           if (lang === "python" || lang === "py") {
-            execResult = await executePython(block.code);
+            execResult = await host.executePython(block.code);
           } else if (isShell) {
-            execResult = await executeShell(block.code);
+            execResult = await host.executeShell(block.code);
           } else if (lang === "html" || lang === "htm") {
-            execResult = await previewHtml(block.code);
+            execResult = await host.previewHtml(block.code);
           } else {
-            execResult = await executeCode(block.code, activeAgentId);
+            execResult = await host.executeCode(block.code, activeAgentId);
           }
           const { result, diff } = execResult;
           updateActiveMessages((prev) =>
@@ -822,7 +824,7 @@ ${code}
 
       let sheetList = "";
       try {
-        const freshCtx = await getWpsContext();
+        const freshCtx = await host.getContext();
         if (freshCtx?.sheetNames?.length) {
           sheetList = freshCtx.sheetNames.join(", ");
         }
@@ -1167,13 +1169,14 @@ ${code}
 
     analytics.chatSend(modeSnapshot, modelSnapshot);
 
-    let liveCtx = wpsCtx ?? {
+    let liveCtx: SpreadsheetContext = wpsCtx ?? {
+      platform: host.platform,
       workbookName: "",
       sheetNames: [],
       selection: null,
     };
     try {
-      const fresh = await getWpsContext();
+      const fresh = await host.getContext();
       if (fresh?.sheetNames?.length) {
         liveCtx = fresh;
         setWpsCtx(fresh);
@@ -1370,10 +1373,10 @@ ${code}
                     diff?: import("./types").DiffResult | null;
                   };
                   try {
-                    execResult = await executeCode(block.code, agentId);
+                    execResult = await host.executeCode(block.code, agentId);
                   } catch (firstErr) {
                     if (firstErr instanceof BlockedError) {
-                      execResult = await executeCode(block.code, agentId, true);
+                      execResult = await host.executeCode(block.code, agentId, true);
                     } else {
                       throw firstErr;
                     }
@@ -1435,7 +1438,7 @@ ${code}
                   )?.content || "";
                 let sheetList = wpsCtx?.sheetNames?.join(", ") || "";
                 try {
-                  const freshCtx = await getWpsContext();
+                  const freshCtx = await host.getContext();
                   if (freshCtx?.sheetNames?.length) {
                     sheetList = freshCtx.sheetNames.join(", ");
                   }
@@ -2046,68 +2049,76 @@ ${code}
           }}
         />
       )}
+      <ApiKeyPanel visible={apiKeyPanelOpen} onClose={() => {
+        setApiKeyPanelOpen(false);
+        if (host.platform === "google-sheets") {
+          try { setProxyMissing(!localStorage.getItem("claude-office-api-key")); } catch { /* */ }
+        }
+      }} />
       {/* 顶部 Header */}
-      <header className={styles.header}>
-        <div className={styles.logoRow}>
-          <div className={styles.logoIcon}>
-            <Claude.Color size={20} />
+      {host.platform !== "google-sheets" ? (
+        <header className={styles.header}>
+          <div className={styles.logoRow}>
+            <div className={styles.logoIcon}>
+              <Claude.Color size={20} />
+            </div>
+            <div className={styles.logoName}>Claude for Excel</div>
+            <span className={styles.betaBadge}>v 3.0.0</span>
+            {heartbeatOk !== null && (
+              <span
+                className={styles.heartbeatDot}
+                style={{ background: heartbeatOk ? "var(--accent)" : "#999" }}
+                title={heartbeatOk ? "服务运行正常" : "心跳检测失败"}
+              />
+            )}
           </div>
-          <div className={styles.logoName}>Claude for Excel</div>
-          <span className={styles.betaBadge}>v 2.3.0</span>
-          {heartbeatOk !== null && (
-            <span
-              className={styles.heartbeatDot}
-              style={{ background: heartbeatOk ? "var(--accent)" : "#999" }}
-              title={heartbeatOk ? "服务运行正常" : "心跳检测失败"}
+          <div className={styles.headerActions}>
+            <button
+              className={`${styles.headerBtn} ${agentListOpen ? styles.headerBtnActive : ""}`}
+              onClick={() => setAgentListOpen((v) => !v)}
+              title={agentListOpen ? "收起 Agents (⌘B)" : "展开 Agents (⌘B)"}
+            >
+              <SidebarToggleIcon />
+            </button>
+            <button className={styles.headerBtn} onClick={handleNewChat} title="新建 Agent"><AddIcon /></button>
+            <button className={styles.headerBtn} onClick={handleOpenHistory} title="历史记录"><HistoryIcon /></button>
+            <button className={styles.headerBtn} onClick={() => setConnectorsOpen(true)} title="数据源管理"><DataSourceIcon /></button>
+            <ThemeToggle theme={theme} onCycle={cycleTheme} />
+          </div>
+        </header>
+      ) : (
+        <header className={styles.header} style={{ padding: "0 4px", gap: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+            <AgentTabBar
+              agents={agents}
+              activeAgentId={activeAgentId}
+              onSwitch={handleSwitchAgent}
+              onClose={removeAgent}
             />
-          )}
-        </div>
-        <div className={styles.headerActions}>
-          <button
-            className={`${styles.headerBtn} ${agentListOpen ? styles.headerBtnActive : ""}`}
-            onClick={() => setAgentListOpen((v) => !v)}
-            title={agentListOpen ? "收起 Agents (⌘B)" : "展开 Agents (⌘B)"}
-          >
-            <SidebarToggleIcon />
-          </button>
-          <button
-            className={styles.headerBtn}
-            onClick={handleNewChat}
-            title="新建 Agent"
-          >
-            <AddIcon />
-          </button>
-          <button
-            className={styles.headerBtn}
-            onClick={handleOpenHistory}
-            title="历史记录"
-          >
-            <HistoryIcon />
-          </button>
-          <button
-            className={styles.headerBtn}
-            onClick={() => setConnectorsOpen(true)}
-            title="数据源管理"
-          >
-            <DataSourceIcon />
-          </button>
-          <ThemeToggle theme={theme} onCycle={cycleTheme} />
-        </div>
-      </header>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+            <button className={styles.headerBtn} onClick={handleNewChat} title="新建对话"><AddIcon /></button>
+            <button className={styles.headerBtn} onClick={handleOpenHistory} title="历史记录"><HistoryIcon /></button>
+            <ThemeToggle theme={theme} onCycle={cycleTheme} />
+          </div>
+        </header>
+      )}
 
       {/* 主体区域：Cursor 风格左侧 Agent 侧边栏 + 右侧聊天列 */}
       <div className={styles.mainBody}>
-        <AgentListPanel
-          agents={agents}
-          activeAgentId={activeAgentId}
-          expanded={agentListOpen}
-          width={sidebarWidth}
-          onSwitch={handleSwitchAgent}
-          onNew={handleNewChat}
-          onRemove={removeAgent}
-        />
+        {host.platform !== "google-sheets" && (
+          <AgentListPanel
+            agents={agents}
+            activeAgentId={activeAgentId}
+            expanded={agentListOpen}
+            width={sidebarWidth}
+            onSwitch={handleSwitchAgent}
+            onNew={handleNewChat}
+            onRemove={removeAgent}
+          />
+        )}
 
-        {agentListOpen && (
+        {host.platform !== "google-sheets" && agentListOpen && (
           <div
             className={styles.sidebarResizeHandle}
             onMouseDown={handleSidebarDragStart}
@@ -2115,8 +2126,8 @@ ${code}
         )}
 
         <div className={styles.chatColumn} ref={chatColumnRef}>
-          {/* Tab 栏 — 仅在侧边栏收起时显示 */}
-          {!agentListOpen && (
+          {/* Tab 栏 — WPS 时在侧边栏收起时显示，Google Sheets 已合并到 header */}
+          {!agentListOpen && host.platform !== "google-sheets" && (
             <AgentTabBar
               agents={agents}
               activeAgentId={activeAgentId}
@@ -2142,14 +2153,23 @@ ${code}
                 <PinIcon /> 引用
               </button>
               <span className={styles.ctxBadge}>
-                {isWpsAvailable() ? "WPS" : "mock"}
+                {host.isAvailable() ? host.platform : "mock"}
               </span>
             </div>
           )}
 
-          {proxyMissing && (
+          {proxyMissing && host.platform !== "google-sheets" && (
             <div className={styles.warning}>
               ⚠ 代理服务器未运行，请在终端执行：node proxy-server.js
+            </div>
+          )}
+          {proxyMissing && host.platform === "google-sheets" && (
+            <div className={styles.warning} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }} onClick={() => setApiKeyPanelOpen(true)}>
+              <span style={{ flex: 1 }}>⚠ 本地代理未连接 — 点此配置 API Key 使用直连模式</span>
+              <button className={styles.gsSettingsBtn} onClick={(e) => { e.stopPropagation(); setApiKeyPanelOpen(true); }} title="API 设置">
+                <GearIcon />
+                <span>API 设置</span>
+              </button>
             </div>
           )}
 
@@ -2199,15 +2219,27 @@ ${code}
             <div ref={bottomRef} />
           </div>
 
-          {/* 输入区 */}
-          <div className={styles.inputArea}>
-            {/* 智能快捷卡片 - 水平滚动行 */}
+          {/* 智能快捷卡片 - Google Sheets 放在 chatArea 与 inputArea 之间 */}
+          {host.platform === "google-sheets" && (
             <QuickActionCards
               hasSelection={!!wpsCtx?.selection}
               onAction={handleQuickAction}
               disabled={loading}
               mode={currentMode}
             />
+          )}
+
+          {/* 输入区 */}
+          <div className={styles.inputArea}>
+            {/* 智能快捷卡片 - WPS 放在输入区 */}
+            {host.platform !== "google-sheets" && (
+              <QuickActionCards
+                hasSelection={!!wpsCtx?.selection}
+                onAction={handleQuickAction}
+                disabled={loading}
+                mode={currentMode}
+              />
+            )}
 
             <div className={styles.inputBox} style={{ height: inputBoxHeight }}>
               {/* 拖拽手柄 */}
@@ -2230,7 +2262,7 @@ ${code}
                         {pinnedSelection.colCount}列）
                       </span>
                       <span className={styles.chipBadge}>
-                        {isWpsAvailable() ? "引用" : "mock"}
+                        {host.isAvailable() ? "引用" : "mock"}
                       </span>
                       <button
                         className={styles.chipRemove}
@@ -2536,6 +2568,15 @@ function PinIcon() {
       <path d="M12 2L2 7l10 5 10-5-10-5z" />
       <path d="M2 17l10 5 10-5" />
       <path d="M2 12l10 5 10-5" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }

@@ -148,6 +148,27 @@
 
 /* (old pinnedTag removed — now uses inlineChip) */
 
+/* Google Sheets: API 设置按钮（嵌入警告栏） */
+.gsSettingsBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 6px;
+  background: transparent;
+  border: 1px solid var(--border-input, var(--bg-elevated));
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.gsSettingsBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
 /* API Key 警告 */
 .warning {
   background: var(--accent-bg);
@@ -306,6 +327,7 @@
   border: none;
   outline: none;
   resize: none;
+  overflow-x: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
   color: var(--text-primary);

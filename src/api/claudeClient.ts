@@ -1,20 +1,35 @@
 /**
  * Claude API 调用层
  *
- * 通过本地代理服务器（proxy-server.js）调用 claude CLI，
- * 绕过 OAuth token 无法直接调用 Anthropic 公开 API 的限制。
+ * 支持两种通道：
+ * 1. 本地代理（proxy-server.js）— WPS 和 Google Sheets 都可用
+ * 2. GAS 直连（google.script.run.chatDirect）— Google Sheets 无代理时的回退
  */
 import type {
-  WpsContext,
+  SpreadsheetContext,
   ChatMessage,
   AttachmentFile,
   ActivityEvent,
 } from "../types";
+import { detectPlatform } from "./platformDetect";
 
 const PROXY_BASE = "http://127.0.0.1:3001";
 
-/** 构建 Excel 上下文字符串 */
-function buildContextString(wpsCtx: WpsContext): string {
+declare const google: {
+  script: {
+    run: {
+      withSuccessHandler<T>(fn: (result: T) => void): {
+        withFailureHandler(fn: (err: Error) => void): {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          [key: string]: (...args: any[]) => void;
+        };
+      };
+    };
+  };
+} | undefined;
+
+/** 构建表格上下文字符串 */
+function buildContextString(wpsCtx: SpreadsheetContext): string {
   const { selection, workbookName, sheetNames, usedRange } = wpsCtx;
   const activeSheet = selection?.sheetName || "";
 
@@ -83,7 +98,7 @@ export async function checkProxy(): Promise<boolean> {
       signal: AbortSignal.timeout(2000),
     });
     return resp.ok;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -167,11 +182,75 @@ function processSseLines(
   return tail;
 }
 
+/** Reset cached proxy detection (call after proxy status changes) */
+export function resetProxyCache(): void {
+  /* no-op for now; reserved for future caching */
+}
+
+/**
+ * GAS 回退：通过 google.script.run.chatFromReact 直接调用 Anthropic API。
+ * 非流式，一次性返回完整响应。需要用户配置 API Key。
+ */
+async function sendViaGas(
+  messages: Array<{ role: string; content: string }>,
+  context: string,
+  callbacks: StreamCallbacks,
+  options?: SendMessageOptions,
+): Promise<void> {
+  if (typeof google === "undefined" || !google?.script?.run) {
+    callbacks.onError(new Error("Google Apps Script 环境不可用。请在 Google Sheets 侧边栏中使用，或启动本地代理服务器（node proxy-server.js）。"));
+    return;
+  }
+
+  let apiKey = "";
+  try {
+    apiKey = localStorage.getItem("claude-office-api-key") || "";
+  } catch { /* localStorage unavailable */ }
+  if (!apiKey) {
+    callbacks.onError(new Error(
+      "请先配置 Anthropic API Key\n" +
+      "点击右上角 ⚙ 设置按钮，在「API Key」标签页中填入您的密钥（sk-ant-api03-...）",
+    ));
+    return;
+  }
+
+  const MODEL_MAP: Record<string, string> = {
+    sonnet: "claude-sonnet-4-5",
+    opus: "claude-opus-4-5",
+    haiku: "claude-haiku-4-5",
+  };
+  const model = MODEL_MAP[options?.model || ""] || options?.model || "claude-sonnet-4-5";
+
+  return new Promise<void>((resolve) => {
+    google!.script.run
+      .withSuccessHandler<{ text?: string; error?: string }>((result) => {
+        if (result.error) {
+          callbacks.onError(new Error(result.error));
+        } else {
+          const text = result.text || "";
+          callbacks.onToken(text);
+          callbacks.onComplete(text);
+        }
+        resolve();
+      })
+      .withFailureHandler((err: Error) => {
+        callbacks.onError(err);
+        resolve();
+      })
+      .chatFromReact(
+        JSON.stringify(messages),
+        context,
+        model,
+        apiKey,
+      );
+  });
+}
+
 /** 流式发送消息给 Claude（通过本地代理） — 使用 XHR onprogress 实现流式 */
 export async function sendMessage(
   userMessage: string,
   history: ChatMessage[],
-  wpsCtx: WpsContext,
+  wpsCtx: SpreadsheetContext,
   callbacks: StreamCallbacks,
   options?: SendMessageOptions,
 ): Promise<void> {
@@ -186,6 +265,12 @@ export async function sendMessage(
   ];
 
   const context = buildContextString(wpsCtx);
+
+  const platform = detectPlatform();
+  const gasAvailable = typeof google !== "undefined" && !!google?.script?.run;
+  if (platform === "google-sheets" && gasAvailable) {
+    return sendViaGas(messages, context, callbacks, options);
+  }
 
   const payload: Record<string, unknown> = { messages, context };
   if (options?.model) payload.model = options.model;

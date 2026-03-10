@@ -1,5 +1,6 @@
 .gridWrap {
   position: relative;
+  overflow: hidden;
 }
 
 .grid {
@@ -9,7 +10,7 @@
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding-bottom: 2px;
+  padding: 0 14px 2px;
 }
 
 .grid::-webkit-scrollbar {
